@@ -142,13 +142,22 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
         auto lhs_col = lhs_tab.get_col(cond.lhs_col.col_name);
         ColType lhs_type = lhs_col->type;
         ColType rhs_type;
-        if (cond.is_rhs_val) {
-            cond.rhs_val.init_raw(lhs_col->len);
-            rhs_type = cond.rhs_val.type;
-        } else {
+        if (!cond.is_rhs_val) {
             TabMeta &rhs_tab = sm_manager_->db_.get_table(cond.rhs_col.tab_name);
             auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
             rhs_type = rhs_col->type;
+        }
+        // Handle DATETIME column with STRING value (before init_raw!)
+        if (cond.is_rhs_val && lhs_type == TYPE_DATETIME && cond.rhs_val.type == TYPE_STRING) {
+            int64_t dt_val;
+            if (!is_valid_datetime(cond.rhs_val.str_val, dt_val)) {
+                throw InternalError("Invalid datetime value");
+            }
+            cond.rhs_val.set_datetime(dt_val);
+        }
+        if (cond.is_rhs_val) {
+            cond.rhs_val.init_raw(lhs_col->len);
+            rhs_type = cond.rhs_val.type;
         }
         // Allow INT -> BIGINT/FLOAT promotion
         if (lhs_type != rhs_type) {

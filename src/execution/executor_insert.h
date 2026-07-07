@@ -43,11 +43,16 @@ class InsertExecutor : public AbstractExecutor {
         for (size_t i = 0; i < values_.size(); i++) {
             auto &col = tab_.cols[i];
             auto &val = values_[i];
-            // Allow INT -> BIGINT promotion
+            // Allow INT -> BIGINT promotion and STRING -> DATETIME conversion
             if (col.type != val.type) {
                 if (col.type == TYPE_BIGINT && val.type == TYPE_INT) {
-                    // Promote INT to BIGINT
                     val.set_bigint((int64_t)val.int_val);
+                } else if (col.type == TYPE_DATETIME && val.type == TYPE_STRING) {
+                    int64_t dt_val;
+                    if (!is_valid_datetime(val.str_val, dt_val)) {
+                        throw InternalError("Invalid datetime value");
+                    }
+                    val.set_datetime(dt_val);
                 } else {
                     throw IncompatibleTypeError(coltype2str(col.type), coltype2str(val.type));
                 }

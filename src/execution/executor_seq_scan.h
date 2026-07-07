@@ -98,6 +98,17 @@ class SeqScanExecutor : public AbstractExecutor {
                 float val = *(float *)data;
                 float rhs = (cond.rhs_val.type == TYPE_FLOAT) ? cond.rhs_val.float_val : (float)cond.rhs_val.int_val;
                 if (!cmp_float(cond.op, val, rhs)) return false;
+            } else if (col_it->type == TYPE_DATETIME) {
+                int64_t val = *(int64_t *)data;
+                int64_t rhs;
+                if (cond.rhs_val.type == TYPE_DATETIME) {
+                    rhs = cond.rhs_val.bigint_val;
+                } else if (cond.rhs_val.type == TYPE_STRING) {
+                    if (!is_valid_datetime(cond.rhs_val.str_val, rhs)) return false;
+                } else {
+                    return false;
+                }
+                if (!cmp_bigint(cond.op, val, rhs)) return false;
             } else if (col_it->type == TYPE_STRING) {
                 std::string val(data, col_it->len);
                 val.resize(strlen(val.c_str()));

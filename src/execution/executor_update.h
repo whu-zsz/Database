@@ -43,6 +43,16 @@ class UpdateExecutor : public AbstractExecutor {
         for (auto &set_clause : set_clauses_) {
             auto col_it = std::find_if(tab_.cols.begin(), tab_.cols.end(),
                 [&](const ColMeta &c) { return c.name == set_clause.lhs.col_name; });
+            // Handle type conversions
+            if (col_it->type == TYPE_DATETIME && set_clause.rhs.type == TYPE_STRING) {
+                int64_t dt_val;
+                if (!is_valid_datetime(set_clause.rhs.str_val, dt_val)) {
+                    throw InternalError("Invalid datetime value");
+                }
+                set_clause.rhs.set_datetime(dt_val);
+            } else if (col_it->type == TYPE_BIGINT && set_clause.rhs.type == TYPE_INT) {
+                set_clause.rhs.set_bigint((int64_t)set_clause.rhs.int_val);
+            }
             set_clause.rhs.init_raw(col_it->len);
             set_vals.push_back({col_it->offset, set_clause.rhs.raw->data, col_it->len});
         }

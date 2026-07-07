@@ -59,6 +59,11 @@ struct Value {
         bigint_val = bigint_val_;
     }
 
+    void set_datetime(int64_t datetime_val_) {
+        type = TYPE_DATETIME;
+        bigint_val = datetime_val_;
+    }
+
     void init_raw(int len) {
         assert(raw == nullptr);
         raw = std::make_shared<RmRecord>(len);
@@ -73,6 +78,9 @@ struct Value {
         } else if (type == TYPE_BIGINT) {
             assert(len == sizeof(int64_t));
             *(int64_t *)(raw->data) = bigint_val;
+        } else if (type == TYPE_DATETIME) {
+            assert(len == sizeof(int64_t));
+            *(int64_t *)(raw->data) = bigint_val;
         } else if (type == TYPE_FLOAT) {
             assert(len == sizeof(float));
             *(float *)(raw->data) = float_val;
@@ -85,6 +93,74 @@ struct Value {
         }
     }
 };
+
+// DATETIME validation and conversion
+// Format: 'YYYY-MM-DD HH:MM:SS' (19 chars)
+// Stored as int64_t: YYYYMMDDHHMMSS
+inline bool is_valid_datetime(const std::string& s, int64_t& result) {
+    if (s.length() != 19) return false;
+    if (s[4] != '-' || s[7] != '-' || s[10] != ' ' || s[13] != ':' || s[16] != ':') return false;
+
+    // Parse components
+    int year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
+    for (int i = 0; i < 4; i++) {
+        if (!isdigit(s[i])) return false;
+        year = year * 10 + (s[i] - '0');
+    }
+    for (int i = 5; i < 7; i++) {
+        if (!isdigit(s[i])) return false;
+        month = month * 10 + (s[i] - '0');
+    }
+    for (int i = 8; i < 10; i++) {
+        if (!isdigit(s[i])) return false;
+        day = day * 10 + (s[i] - '0');
+    }
+    for (int i = 11; i < 13; i++) {
+        if (!isdigit(s[i])) return false;
+        hour = hour * 10 + (s[i] - '0');
+    }
+    for (int i = 14; i < 16; i++) {
+        if (!isdigit(s[i])) return false;
+        minute = minute * 10 + (s[i] - '0');
+    }
+    for (int i = 17; i < 19; i++) {
+        if (!isdigit(s[i])) return false;
+        second = second * 10 + (s[i] - '0');
+    }
+
+    // Validate range
+    if (year < 1000 || year > 9999) return false;
+    if (month < 1 || month > 12) return false;
+    if (hour > 23 || minute > 59 || second > 59) return false;
+
+    // Days per month
+    int days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    // Leap year
+    if ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) {
+        days_in_month[1] = 29;
+    }
+    if (day < 1 || day > days_in_month[month - 1]) return false;
+
+    // Encode as YYYYMMDDHHMMSS
+    result = (int64_t)year * 10000000000LL + (int64_t)month * 100000000LL +
+             (int64_t)day * 1000000LL + (int64_t)hour * 10000LL +
+             (int64_t)minute * 100LL + (int64_t)second;
+    return true;
+}
+
+// Convert int64_t datetime back to string
+inline std::string datetime_to_str(int64_t val) {
+    int second = val % 100; val /= 100;
+    int minute = val % 100; val /= 100;
+    int hour = val % 100; val /= 100;
+    int day = val % 100; val /= 100;
+    int month = val % 100; val /= 100;
+    int year = val;
+
+    char buf[20];
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d", year, month, day, hour, minute, second);
+    return std::string(buf);
+}
 
 enum CompOp { OP_EQ, OP_NE, OP_LT, OP_GT, OP_LE, OP_GE };
 
