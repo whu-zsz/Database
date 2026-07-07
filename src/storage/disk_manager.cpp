@@ -116,6 +116,9 @@ void DiskManager::create_file(const std::string &path) {
     if (path2fd_.count(path)) {
         throw FileExistsError(path);
     }
+    if (is_file(path)) {
+        throw FileExistsError(path);
+    }
     int fd = open(path.c_str(), O_CREAT | O_RDWR, 0644);
     if (fd < 0) {
         throw UnixError();
@@ -133,6 +136,9 @@ void DiskManager::destroy_file(const std::string &path) {
     if (path2fd_.count(path)) {
         throw FileNotClosedError(path);
     }
+    if (!is_file(path)) {
+        throw FileNotFoundError(path);
+    }
     if (unlink(path.c_str()) < 0) {
         throw UnixError();
     }
@@ -149,6 +155,9 @@ int DiskManager::open_file(const std::string &path) {
     // 注意不能重复打开相同文件，并且需要更新文件打开列表
     if (path2fd_.count(path)) {
         throw FileNotClosedError(path);
+    }
+    if (!is_file(path)) {
+        throw FileNotFoundError(path);
     }
     int fd = open(path.c_str(), O_RDWR);
     if (fd < 0) {

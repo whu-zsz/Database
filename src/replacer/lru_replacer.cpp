@@ -60,11 +60,9 @@ void LRUReplacer::unpin(frame_id_t frame_id) {
     //  支持并发锁
     //  选择一个frame取消固定，加入LRU列表中（可以被淘汰）
     std::scoped_lock lock{latch_};
-    // 如果已经在列表中，先移除（避免重复添加）
-    auto it = LRUhash_.find(frame_id);
-    if (it != LRUhash_.end()) {
-        LRUlist_.erase(it->second);
-        LRUhash_.erase(it);
+    // 如果已经在列表中，不重复添加（已在列表中说明还没被pin过，无需改变位置）
+    if (LRUhash_.find(frame_id) != LRUhash_.end()) {
+        return;
     }
     // 添加到首部，表示最近被访问
     LRUlist_.push_front(frame_id);
