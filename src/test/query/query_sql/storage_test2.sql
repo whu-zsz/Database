@@ -1,0 +1,11 @@
+create table t(time datetime, temperature float);
+insert into t values('1999-07-07 12:30:00', 36.0);
+select * from t;
+insert into t values('1999-13-07 12:30:00', 36.0);
+insert into t values('1999-1-07 12:30:00', 36.0);
+insert into t values('1999-00-07 12:30:00', 36.0);
+insert into t values('1999-07-00 12:30:00', 36.0);
+insert into t values('0001-07-10 12:30:00', 36.0);
+insert into t values('1999-02-30 12:30:00', 36.0);
+insert into t values('1999-02-28 12:30:61', 36.0);
+select * from t;
