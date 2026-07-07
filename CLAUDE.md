@@ -236,7 +236,65 @@
 
 ---
 
-## 7. 调试与性能分析
+## 7. 测试要求与运行方法
+
+### 7.1 题目三：BIGINT类型
+
+**测试文件**：`src/test/query/query_sql/storage_test6.sql`
+
+**测试内容**：
+```sql
+CREATE TABLE t(bid bigint,sid int);
+INSERT INTO t VALUES(372036854775807,233421);
+INSERT INTO t VALUES(-922337203685477580,124332);
+SELECT * FROM t;
+INSERT INTO t VALUES(9223372036854775809,12345);
+SELECT * FROM t;
+```
+
+**期望输出**（写入`output.txt`）：
+```
+| bid | sid |
+| 372036854775807 | 233421 |
+| -922337203685477580 | 124332 |
+failure
+| bid | sid |
+| 372036854775807 | 233421 |
+| -922337203685477580 | 124332 |
+```
+
+**关键实现要点**：
+- BIGINT范围：`[-9223372036854775808, 9223372036854775807]`
+- 超出范围的值必须返回`failure`（小写），而不是错误信息
+- 客户端和`output.txt`都必须显示`failure`
+
+**运行测试**：
+```bash
+cd /Users/lnm/Downloads/WHU_database_2026/Database/build
+
+# 方法1：使用Python测试脚本
+cd /Users/lnm/Downloads/WHU_database_2026/Database
+python3 src/test/query/query_test_bigint.py
+
+# 方法2：手动测试
+cd /Users/lnm/Downloads/WHU_database_2026/Database/build
+./bin/rmdb storage_bigint_test &
+sleep 3
+./bin/query_test ../src/test/query/query_sql/storage_test6.sql
+cat storage_bigint_test/output.txt
+pkill rmdb
+```
+
+### 7.2 测试注意事项
+
+- **output.txt位置**：`output.txt`必须写入数据库目录下（服务器会自动`chdir`到数据库目录）
+- **错误处理**：所有异常必须返回`failure`给客户端，而不是错误信息
+- **浮点数格式**：浮点数必须保留6位小数（如`90.500000`）
+- **整数格式**：整数不显示小数点
+
+---
+
+## 8. 调试与性能分析
 
 - **调试工具**：GDB（推荐 `gdb --args ./rmdb_client ...`），配合 `LOG_DEBUG` 宏输出关键变量。
 - **性能对比**：题目五要求索引查询耗时 <= 70% 无索引耗时。如果达不到，检查 B+树查找逻辑是否走索引（使用 `IxScan`），不要回退到全表扫描。
@@ -244,7 +302,7 @@
 
 ---
 
-## 8. 参考资料
+## 9. 参考资料
 
 - [GDB Tutorial (CMU)](https://www.cs.cmu.edu/~gilpin/tutorial/)
 - [CMU 15-445 Spring 2026 官网](https://15445.courses.cs.cmu.edu/spring2026/)
