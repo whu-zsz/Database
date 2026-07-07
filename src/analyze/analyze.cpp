@@ -9,6 +9,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include "analyze.h"
+#include <climits>
 
 /**
  * @description: 分析器，进行语义分析和查询重写，需要检查不符合语义规定的部分
@@ -149,8 +150,12 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
             auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
             rhs_type = rhs_col->type;
         }
+        // Allow INT -> BIGINT/FLOAT promotion
         if (lhs_type != rhs_type) {
-            throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
+            if (!((lhs_type == TYPE_BIGINT && rhs_type == TYPE_INT) ||
+                  (lhs_type == TYPE_FLOAT && rhs_type == TYPE_INT))) {
+                throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
+            }
         }
     }
 }
@@ -161,11 +166,6 @@ Value Analyze::convert_sv_value(const std::shared_ptr<ast::Value> &sv_val) {
     if (auto int_lit = std::dynamic_pointer_cast<ast::IntLit>(sv_val)) {
         val.set_int(int_lit->val);
     } else if (auto bigint_lit = std::dynamic_pointer_cast<ast::BigIntLit>(sv_val)) {
-        // Check if the value is within valid BIGINT range
-        // INT64_MAX is used as a marker for overflow
-        if (bigint_lit->val == INT64_MAX) {
-            throw InternalError("BIGINT value out of range");
-        }
         val.set_bigint(bigint_lit->val);
     } else if (auto float_lit = std::dynamic_pointer_cast<ast::FloatLit>(sv_val)) {
         val.set_float(float_lit->val);

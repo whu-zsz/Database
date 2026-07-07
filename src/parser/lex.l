@@ -16,6 +16,9 @@
 #include <iostream>
 #include <cerrno>
 #include <climits>
+#include <cstdlib>
+
+extern bool g_bigint_overflow;
 
 // automatically update location
 #define YY_USER_ACTION \
@@ -103,15 +106,17 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
     errno = 0;
     long long val = strtoll(yytext, NULL, 10);
     if (errno == ERANGE) {
-        // Overflow detected - return a special value that will cause failure
-        // We'll use INT64_MAX as a marker for overflow
-        yylval->sv_bigint = INT64_MAX;
+        // Overflow detected - set global flag
+        g_bigint_overflow = true;
+        yylval->sv_bigint = 0;
         return VALUE_BIGINT;
     } else if (val > INT32_MAX || val < INT32_MIN) {
         // Valid BIGINT but out of INT range
         yylval->sv_bigint = val;
         return VALUE_BIGINT;
     } else {
+        // Small integer - return as VALUE_INT
+        // Type promotion INT->BIGINT handled in analyze
         yylval->sv_int = (int)val;
         return VALUE_INT;
     }

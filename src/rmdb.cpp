@@ -29,6 +29,7 @@ See the Mulan PSL v2 for more details. */
 
 static bool should_exit = false;
 static std::string g_db_name;
+bool g_bigint_overflow = false;
 
 // 构建全局所需的管理器对象
 auto disk_manager = std::make_unique<DiskManager>();
@@ -122,9 +123,22 @@ void *client_handler(void *sock_fd) {
         // 用于判断是否已经调用了yy_delete_buffer来删除buf
         bool finish_analyze = false;
         pthread_mutex_lock(buffer_mutex);
+        g_bigint_overflow = false;
         YY_BUFFER_STATE buf = yy_scan_string(data_recv);
         if (yyparse() == 0) {
-            if (ast::parse_tree != nullptr) {
+            if (g_bigint_overflow) {
+                // BIGINT overflow detected by lexer
+                yy_delete_buffer(buf);
+                finish_analyze = true;
+                pthread_mutex_unlock(buffer_mutex);
+                std::string failure_str = "failure\n";
+                memcpy(data_send, failure_str.c_str(), failure_str.length());
+                offset = failure_str.length();
+                std::fstream outfile;
+                outfile.open("output.txt", std::ios::out | std::ios::app);
+                outfile << "failure\n";
+                outfile.close();
+            } else if (ast::parse_tree != nullptr) {
                 try {
                     // analyze and rewrite
                     std::shared_ptr<Query> query = analyze->do_analyze(ast::parse_tree);

@@ -88,11 +88,15 @@ class SeqScanExecutor : public AbstractExecutor {
             char *data = rec->data + col_it->offset;
             if (col_it->type == TYPE_INT) {
                 int val = *(int *)data;
-                int rhs = cond.rhs_val.int_val;
+                int rhs = (cond.rhs_val.type == TYPE_INT) ? cond.rhs_val.int_val : (int)cond.rhs_val.float_val;
                 if (!cmp_int(cond.op, val, rhs)) return false;
+            } else if (col_it->type == TYPE_BIGINT) {
+                int64_t val = *(int64_t *)data;
+                int64_t rhs = (cond.rhs_val.type == TYPE_BIGINT) ? cond.rhs_val.bigint_val : (int64_t)cond.rhs_val.int_val;
+                if (!cmp_bigint(cond.op, val, rhs)) return false;
             } else if (col_it->type == TYPE_FLOAT) {
                 float val = *(float *)data;
-                float rhs = cond.rhs_val.float_val;
+                float rhs = (cond.rhs_val.type == TYPE_FLOAT) ? cond.rhs_val.float_val : (float)cond.rhs_val.int_val;
                 if (!cmp_float(cond.op, val, rhs)) return false;
             } else if (col_it->type == TYPE_STRING) {
                 std::string val(data, col_it->len);
@@ -105,6 +109,17 @@ class SeqScanExecutor : public AbstractExecutor {
     }
 
     bool cmp_int(CompOp op, int l, int r) {
+        switch (op) {
+            case OP_EQ: return l == r;
+            case OP_NE: return l != r;
+            case OP_LT: return l < r;
+            case OP_GT: return l > r;
+            case OP_LE: return l <= r;
+            case OP_GE: return l >= r;
+        }
+        return false;
+    }
+    bool cmp_bigint(CompOp op, int64_t l, int64_t r) {
         switch (op) {
             case OP_EQ: return l == r;
             case OP_NE: return l != r;

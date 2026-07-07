@@ -43,8 +43,14 @@ class InsertExecutor : public AbstractExecutor {
         for (size_t i = 0; i < values_.size(); i++) {
             auto &col = tab_.cols[i];
             auto &val = values_[i];
+            // Allow INT -> BIGINT promotion
             if (col.type != val.type) {
-                throw IncompatibleTypeError(coltype2str(col.type), coltype2str(val.type));
+                if (col.type == TYPE_BIGINT && val.type == TYPE_INT) {
+                    // Promote INT to BIGINT
+                    val.set_bigint((int64_t)val.int_val);
+                } else {
+                    throw IncompatibleTypeError(coltype2str(col.type), coltype2str(val.type));
+                }
             }
             val.init_raw(col.len);
             memcpy(rec.data + col.offset, val.raw->data, col.len);

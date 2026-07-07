@@ -63,8 +63,13 @@ struct Value {
         assert(raw == nullptr);
         raw = std::make_shared<RmRecord>(len);
         if (type == TYPE_INT) {
-            assert(len == sizeof(int));
-            *(int *)(raw->data) = int_val;
+            if (len == sizeof(int64_t)) {
+                // INT -> BIGINT promotion (when column is BIGINT)
+                *(int64_t *)(raw->data) = (int64_t)int_val;
+            } else {
+                assert(len == sizeof(int));
+                *(int *)(raw->data) = int_val;
+            }
         } else if (type == TYPE_BIGINT) {
             assert(len == sizeof(int64_t));
             *(int64_t *)(raw->data) = bigint_val;
