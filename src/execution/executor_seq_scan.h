@@ -10,6 +10,7 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
+#include <cstring>
 #include "execution_defs.h"
 #include "execution_manager.h"
 #include "executor_abstract.h"
@@ -18,16 +19,15 @@ See the Mulan PSL v2 for more details. */
 
 class SeqScanExecutor : public AbstractExecutor {
    private:
-    std::string tab_name_;              // 表的名称
-    std::vector<Condition> conds_;      // scan的条件
-    RmFileHandle *fh_;                  // 表的数据文件句柄
-    std::vector<ColMeta> cols_;         // scan后生成的记录的字段
-    size_t len_;                        // scan后生成的每条记录的长度
-    std::vector<Condition> fed_conds_;  // 同conds_，两个字段相同
+    std::string tab_name_;
+    std::vector<Condition> conds_;
+    RmFileHandle *fh_;
+    std::vector<ColMeta> cols_;
+    size_t len_;
+    std::vector<Condition> fed_conds_;
 
     Rid rid_;
-    std::unique_ptr<RecScan> scan_;     // table_iterator
-
+    std::unique_ptr<RecScan> scan_;
     SmManager *sm_manager_;
 
    public:
@@ -39,23 +39,102 @@ class SeqScanExecutor : public AbstractExecutor {
         fh_ = sm_manager_->fhs_.at(tab_name_).get();
         cols_ = tab.cols;
         len_ = cols_.back().offset + cols_.back().len;
-
         context_ = context;
-
         fed_conds_ = conds_;
     }
 
     void beginTuple() override {
-        
+        scan_ = std::make_unique<RmScan>(fh_);
+        // 跳过不满足条件的记录
+        while (!scan_->is_end() && !check_conds()) {
+            scan_->next();
+        }
+        if (!scan_->is_end()) {
+            rid_ = scan_->rid();
+        }
     }
 
     void nextTuple() override {
-        
+        do {
+            scan_->next();
+        } while (!scan_->is_end() && !check_conds());
+        if (!scan_->is_end()) {
+            rid_ = scan_->rid();
+        }
+    }
+
+    bool is_end() const override {
+        return scan_->is_end();
     }
 
     std::unique_ptr<RmRecord> Next() override {
-        return nullptr;
+        return fh_->get_record(rid_, context_);
     }
 
+    const std::vector<ColMeta> &cols() const override { return cols_; }
+    size_t tupleLen() const override { return len_; }
     Rid &rid() override { return rid_; }
+
+   private:
+    bool check_conds() {
+        if (fed_conds_.empty()) return true;
+        auto rec = fh_->get_record(scan_->rid(), context_);
+        if (rec == nullptr) return false;
+        for (auto &cond : fed_conds_) {
+            if (!cond.is_rhs_val || cond.lhs_col.tab_name != tab_name_) continue;
+            auto col_it = std::find_if(cols_.begin(), cols_.end(),
+                [&](const ColMeta &c) { return c.name == cond.lhs_col.col_name; });
+            if (col_it == cols_.end()) continue;
+            char *data = rec->data + col_it->offset;
+            if (col_it->type == TYPE_INT) {
+                int val = *(int *)data;
+                int rhs = cond.rhs_val.int_val;
+                if (!cmp_int(cond.op, val, rhs)) return false;
+            } else if (col_it->type == TYPE_FLOAT) {
+                float val = *(float *)data;
+                float rhs = cond.rhs_val.float_val;
+                if (!cmp_float(cond.op, val, rhs)) return false;
+            } else if (col_it->type == TYPE_STRING) {
+                std::string val(data, col_it->len);
+                val.resize(strlen(val.c_str()));
+                std::string rhs = cond.rhs_val.str_val;
+                if (!cmp_str(cond.op, val, rhs)) return false;
+            }
+        }
+        return true;
+    }
+
+    bool cmp_int(CompOp op, int l, int r) {
+        switch (op) {
+            case OP_EQ: return l == r;
+            case OP_NE: return l != r;
+            case OP_LT: return l < r;
+            case OP_GT: return l > r;
+            case OP_LE: return l <= r;
+            case OP_GE: return l >= r;
+        }
+        return false;
+    }
+    bool cmp_float(CompOp op, float l, float r) {
+        switch (op) {
+            case OP_EQ: return l == r;
+            case OP_NE: return l != r;
+            case OP_LT: return l < r;
+            case OP_GT: return l > r;
+            case OP_LE: return l <= r;
+            case OP_GE: return l >= r;
+        }
+        return false;
+    }
+    bool cmp_str(CompOp op, const std::string &l, const std::string &r) {
+        switch (op) {
+            case OP_EQ: return l == r;
+            case OP_NE: return l != r;
+            case OP_LT: return l < r;
+            case OP_GT: return l > r;
+            case OP_LE: return l <= r;
+            case OP_GE: return l >= r;
+        }
+        return false;
+    }
 };

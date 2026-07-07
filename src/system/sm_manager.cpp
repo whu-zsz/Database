@@ -85,7 +85,36 @@ void SmManager::drop_db(const std::string& db_name) {
  * @param {string&} db_name 数据库名称，与文件夹同名
  */
 void SmManager::open_db(const std::string& db_name) {
-    
+    if (!is_dir(db_name)) {
+        throw DatabaseNotFoundError(db_name);
+    }
+    // 进入数据库目录
+    if (chdir(db_name.c_str()) < 0) {
+        throw UnixError();
+    }
+    // 读取数据库元数据
+    std::ifstream ifs(DB_META_NAME);
+    if (!ifs.is_open()) {
+        throw DatabaseNotFoundError(db_name);
+    }
+    ifs >> db_;
+    // 打开所有表的数据文件
+    for (auto &entry : db_.tabs_) {
+        auto &tab = entry.second;
+        fhs_.emplace(tab.name, rm_manager_->open_file(tab.name));
+    }
+    // 打开所有索引文件
+    for (auto &entry : db_.tabs_) {
+        auto &tab = entry.second;
+        for (auto &index : tab.indexes) {
+            std::vector<std::string> col_names;
+            for (auto &col : index.cols) {
+                col_names.push_back(col.name);
+            }
+            auto ix_name = ix_manager_->get_index_name(tab.name, col_names);
+            ihs_.emplace(ix_name, ix_manager_->open_index(tab.name, col_names));
+        }
+    }
 }
 
 /**
@@ -101,7 +130,22 @@ void SmManager::flush_meta() {
  * @description: 关闭数据库并把数据落盘
  */
 void SmManager::close_db() {
-    
+    // 关闭所有索引文件
+    for (auto &entry : ihs_) {
+        ix_manager_->close_index(entry.second.get());
+    }
+    ihs_.clear();
+    // 关闭所有表数据文件
+    for (auto &entry : fhs_) {
+        rm_manager_->close_file(entry.second.get());
+    }
+    fhs_.clear();
+    // 元数据刷盘
+    flush_meta();
+    // 返回上级目录
+    if (chdir("..") < 0) {
+        throw UnixError();
+    }
 }
 
 /**
@@ -188,7 +232,34 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
  * @param {Context*} context
  */
 void SmManager::drop_table(const std::string& tab_name, Context* context) {
-    
+    if (!db_.is_table(tab_name)) {
+        throw TableNotFoundError(tab_name);
+    }
+    TabMeta &tab = db_.get_table(tab_name);
+    // 先删除表上的所有索引
+    for (auto &index : tab.indexes) {
+        std::vector<ColMeta> cols = index.cols;
+        auto ix_name = ix_manager_->get_index_name(tab_name, cols);
+        if (ihs_.count(ix_name)) {
+            ix_manager_->close_index(ihs_[ix_name].get());
+            ihs_.erase(ix_name);
+        }
+        if (ix_manager_->exists(tab_name, cols)) {
+            ix_manager_->destroy_index(tab_name, cols);
+        }
+    }
+    // 关闭并删除表的数据文件
+    if (fhs_.count(tab_name)) {
+        rm_manager_->close_file(fhs_[tab_name].get());
+        fhs_.erase(tab_name);
+    }
+    if (disk_manager_->is_file(tab_name)) {
+        rm_manager_->destroy_file(tab_name);
+    }
+    // 从元数据中删除
+    db_.tabs_.erase(tab_name);
+    // 元数据刷盘
+    flush_meta();
 }
 
 /**
@@ -198,7 +269,42 @@ void SmManager::drop_table(const std::string& tab_name, Context* context) {
  * @param {Context*} context
  */
 void SmManager::create_index(const std::string& tab_name, const std::vector<std::string>& col_names, Context* context) {
-    
+    if (!db_.is_table(tab_name)) {
+        throw TableNotFoundError(tab_name);
+    }
+    TabMeta &tab = db_.get_table(tab_name);
+    // 检查字段存在且获取字段元数据
+    std::vector<ColMeta> cols;
+    for (auto &col_name : col_names) {
+        auto it = tab.get_col(col_name);
+        cols.push_back(*it);
+    }
+    // 检查索引是否已存在
+    if (tab.is_index(col_names)) {
+        throw IndexExistsError(tab_name, col_names);
+    }
+    // 创建索引文件
+    ix_manager_->create_index(tab_name, cols);
+    // 打开索引文件句柄
+    auto ix_name = ix_manager_->get_index_name(tab_name, col_names);
+    ihs_.emplace(ix_name, ix_manager_->open_index(tab_name, col_names));
+    // 更新表元数据
+    IndexMeta index_meta;
+    index_meta.tab_name = tab_name;
+    index_meta.col_num = cols.size();
+    index_meta.col_tot_len = 0;
+    for (auto &col : cols) {
+        index_meta.col_tot_len += col.len;
+        index_meta.cols.push_back(col);
+    }
+    tab.indexes.push_back(index_meta);
+    // 更新字段的索引标记
+    for (auto &col_name : col_names) {
+        auto it = tab.get_col(col_name);
+        it->index = true;
+    }
+    // 元数据刷盘
+    flush_meta();
 }
 
 /**
@@ -208,7 +314,31 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
  * @param {Context*} context
  */
 void SmManager::drop_index(const std::string& tab_name, const std::vector<std::string>& col_names, Context* context) {
-    
+    if (!db_.is_table(tab_name)) {
+        throw TableNotFoundError(tab_name);
+    }
+    TabMeta &tab = db_.get_table(tab_name);
+    if (!tab.is_index(col_names)) {
+        throw IndexNotFoundError(tab_name, col_names);
+    }
+    // 关闭索引文件句柄
+    auto ix_name = ix_manager_->get_index_name(tab_name, col_names);
+    if (ihs_.count(ix_name)) {
+        ix_manager_->close_index(ihs_[ix_name].get());
+        ihs_.erase(ix_name);
+    }
+    // 删除索引文件
+    ix_manager_->destroy_index(tab_name, col_names);
+    // 从表元数据中移除索引
+    auto it = tab.get_index_meta(col_names);
+    tab.indexes.erase(it);
+    // 更新字段的索引标记
+    for (auto &col_name : col_names) {
+        auto col_it = tab.get_col(col_name);
+        col_it->index = false;
+    }
+    // 元数据刷盘
+    flush_meta();
 }
 
 /**
@@ -218,5 +348,9 @@ void SmManager::drop_index(const std::string& tab_name, const std::vector<std::s
  * @param {Context*} context
  */
 void SmManager::drop_index(const std::string& tab_name, const std::vector<ColMeta>& cols, Context* context) {
-    
+    std::vector<std::string> col_names;
+    for (auto &col : cols) {
+        col_names.push_back(col.name);
+    }
+    drop_index(tab_name, col_names, context);
 }

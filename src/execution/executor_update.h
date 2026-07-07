@@ -38,7 +38,56 @@ class UpdateExecutor : public AbstractExecutor {
         context_ = context;
     }
     std::unique_ptr<RmRecord> Next() override {
-        
+        // 预先初始化所有 SET 子句的值（只需初始化一次，后续行复用）
+        std::vector<std::tuple<int, char*, int>> set_vals;  // (col_offset, raw_data, col_len)
+        for (auto &set_clause : set_clauses_) {
+            auto col_it = std::find_if(tab_.cols.begin(), tab_.cols.end(),
+                [&](const ColMeta &c) { return c.name == set_clause.lhs.col_name; });
+            set_clause.rhs.init_raw(col_it->len);
+            set_vals.push_back({col_it->offset, set_clause.rhs.raw->data, col_it->len});
+        }
+        for (auto &rid : rids_) {
+            // 获取原记录
+            auto old_rec = fh_->get_record(rid, context_);
+            if (old_rec == nullptr) continue;
+            // 从索引中删除旧记录
+            for (size_t i = 0; i < tab_.indexes.size(); ++i) {
+                auto &index = tab_.indexes[i];
+                auto ih = sm_manager_->ihs_.at(
+                    sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                char *key = new char[index.col_tot_len];
+                int offset = 0;
+                for (size_t j = 0; j < index.col_num; ++j) {
+                    memcpy(key + offset, old_rec->data + index.cols[j].offset, index.cols[j].len);
+                    offset += index.cols[j].len;
+                }
+                ih->delete_entry(key, context_->txn_);
+                delete[] key;
+            }
+            // 构建新记录：复制旧记录然后覆盖 SET 字段
+            auto new_buf = new char[fh_->get_file_hdr().record_size];
+            memcpy(new_buf, old_rec->data, fh_->get_file_hdr().record_size);
+            for (auto &sv : set_vals) {
+                memcpy(new_buf + std::get<0>(sv), std::get<1>(sv), std::get<2>(sv));
+            }
+            // 更新记录
+            fh_->update_record(rid, new_buf, context_);
+            // 插入新记录到索引
+            for (size_t i = 0; i < tab_.indexes.size(); ++i) {
+                auto &index = tab_.indexes[i];
+                auto ih = sm_manager_->ihs_.at(
+                    sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                char *key = new char[index.col_tot_len];
+                int offset = 0;
+                for (size_t j = 0; j < index.col_num; ++j) {
+                    memcpy(key + offset, new_buf + index.cols[j].offset, index.cols[j].len);
+                    offset += index.cols[j].len;
+                }
+                ih->insert_entry(key, rid, context_->txn_);
+                delete[] key;
+            }
+            delete[] new_buf;
+        }
         return nullptr;
     }
 

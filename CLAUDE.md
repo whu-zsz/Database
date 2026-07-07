@@ -4,6 +4,52 @@
 
 ---
 
+## 0. 当前实现进度
+
+### 已完成模块（题目一～四基础查询全部通过）
+
+| 模块 | 已完成内容 |
+|:---|:---|
+| **Storage** | `DiskManager`: read/write_page, create/destroy/open/close_file |
+| | `BufferPoolManager`: fetch/new/unpin/flush/delete/flush_all page + find_victim_page |
+| | `LRUReplacer`: victim (尾部淘汰), pin (移除), unpin (首部插入, 重复 unpin 为 no-op) |
+| **Record** | `RmFileHandle`: get/insert/delete/update record + fetch/create/release page handle |
+| | `RmScan`: next/is_end/rid, bitmap 驱动的顺序扫描 |
+| **System** | `SmManager`: open_db (加载 meta + 打开文件句柄), close_db (刷盘 + 清理), drop_table (删索引 + 删数据文件), create_index, drop_index |
+| **Execution** | `SeqScanExecutor`: RmScan + check_conds (INT/FLOAT/STRING 6 种比较符), `rid_` 在 beginTuple/nextTuple 中设置 |
+| | `InsertExecutor`: 框架已实现 (写记录 + 同步索引) |
+| | `DeleteExecutor`: 遍历 rids_ → 删除索引条目 → delete_record |
+| | `UpdateExecutor`: 遍历 rids_ → 旧索引删 → 构造新记录 → update_record → 新索引插 (init_raw 只调用一次, 不在行循环内) |
+| | `ProjectionExecutor`: 委托子节点, Next() 中按 sel_idxs_ 投影裁剪 |
+| | `NestedLoopJoinExecutor`: 双循环 + check_current_match (跨表字段查找 + 条件判断), 支持笛卡尔积/等值/非等值连接 |
+| **Transaction** | `begin`: 新建 Transaction, 分配 txn_id/start_ts, 状态 GROWING, 加入 txn_map |
+| | `commit`/`abort`: 设置 COMMITTED/ABORTED 状态 (保留在 txn_map 以便 SetTransaction 检测并建新事务) |
+| **Analyze** | 补全 `UpdateStmt` 的 WHERE 条件提取 + SET 子句转换 |
+| **Portal** | UPDATE 匹配 0 行时 throw InternalError 输出 `failure` |
+| **Test** | `src/test/CMakeLists.txt` 添加 query_test 目标, `query_test_basic.py` 路径修复 |
+
+### 待实现模块
+
+| 优先级 | 模块 | 涉及内容 |
+|:---|:---|:---|
+| 1 | B+ 树索引核心 | `IxIndexHandle`: lower_bound, insert_entry, delete_entry, split, coalesce, redistribute 等 |
+| 2 | BIGINT/DATETIME | 类型校验, 范围/格式检查 |
+| 3 | Aggregate + OrderBy | SUM/MAX/MIN/COUNT, 多字段排序, LIMIT |
+| 4 | BlockNLJ | 块嵌套循环连接 |
+| 5 | LockManager | 2PL + No-Wait 死锁预防, 表级/行级锁 |
+| 6 | Log + Recovery | WAL, Analyze/Redo/Undo |
+
+### 关键踩坑记录
+
+- **LRUReplacer::unpin** — 重复 unpin 同一 frame 应为 no-op，不能将其移到首部（否则测试 1 victim 顺序错误）
+- **DiskManager::create/destroy_file** — 除 `path2fd_` 检查外还需 `is_file()` 检查（文件创建后即关闭，不在 path2fd_ 中）
+- **DiskManager::open_file** — 文件不存在时抛 `FileNotFoundError`（非 `UnixError`），测试代码根据异常类型判断
+- **UpdateExecutor::init_raw** — 必须在行循环外调用一次；循环内每行都调会导致第二行 assert raw==nullptr 崩溃
+- **SeqScanExecutor::rid_** — Portal 收 rids 时不调用 Next()，必须在 beginTuple/nextTuple 中设置 rid_
+- **TransactionManager** — commit/abort 不能从 txn_map 删除事务（下条 SQL 用旧 txn_id 查询会 assertion 失败），只改状态
+
+---
+
 ## 1. 项目概述
 
 - **目标**：基于 RMDB 框架，补全存储管理、查询执行、事务、并发控制、故障恢复等核心模块，实现一个简单的 DBMS。

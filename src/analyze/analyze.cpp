@@ -48,8 +48,19 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         get_clause(x->conds, query->conds);
         check_clause(query->tables, query->conds);
     } else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(parse)) {
-        /** TODO: */
-
+        // 处理where条件
+        get_clause(x->conds, query->conds);
+        check_clause({x->tab_name}, query->conds);
+        // 处理set子句
+        std::vector<ColMeta> all_cols;
+        get_all_cols({x->tab_name}, all_cols);
+        for (auto &sv_set_clause : x->set_clauses) {
+            TabCol tab_col = {.tab_name = x->tab_name, .col_name = sv_set_clause->col_name};
+            tab_col = check_column(all_cols, tab_col);
+            Value val = convert_sv_value(sv_set_clause->val);
+            SetClause set_clause = {.lhs = tab_col, .rhs = val};
+            query->set_clauses.push_back(set_clause);
+        }
     } else if (auto x = std::dynamic_pointer_cast<ast::DeleteStmt>(parse)) {
         //处理where条件
         get_clause(x->conds, query->conds);
