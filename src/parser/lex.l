@@ -14,6 +14,8 @@
 #include "ast.h"
 #include "yacc.tab.h"
 #include <iostream>
+#include <cerrno>
+#include <climits>
 
 // automatically update location
 #define YY_USER_ACTION \
@@ -75,6 +77,7 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 "SET" { return SET; }
 "SELECT" { return SELECT; }
 "INT" { return INT; }
+"BIGINT" { return BIGINT; }
 "CHAR" { return CHAR; }
 "FLOAT" { return FLOAT; }
 "INDEX" { return INDEX; }
@@ -97,8 +100,15 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 }
     /* literals */
 {value_int} {
-    yylval->sv_int = atoi(yytext);
-    return VALUE_INT;
+    errno = 0;
+    long long val = strtoll(yytext, NULL, 10);
+    if (errno == ERANGE || val > INT32_MAX || val < INT32_MIN) {
+        yylval->sv_bigint = val;
+        return VALUE_BIGINT;
+    } else {
+        yylval->sv_int = (int)val;
+        return VALUE_INT;
+    }
 }
 {value_float} {
     yylval->sv_float = atof(yytext);

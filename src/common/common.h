@@ -31,8 +31,9 @@ struct TabCol {
 struct Value {
     ColType type;  // type of value
     union {
-        int int_val;      // int value
-        float float_val;  // float value
+        int int_val;        // int value
+        float float_val;    // float value
+        int64_t bigint_val; // bigint value (8 bytes)
     };
     std::string str_val;  // string value
 
@@ -53,12 +54,20 @@ struct Value {
         str_val = std::move(str_val_);
     }
 
+    void set_bigint(int64_t bigint_val_) {
+        type = TYPE_BIGINT;
+        bigint_val = bigint_val_;
+    }
+
     void init_raw(int len) {
         assert(raw == nullptr);
         raw = std::make_shared<RmRecord>(len);
         if (type == TYPE_INT) {
             assert(len == sizeof(int));
             *(int *)(raw->data) = int_val;
+        } else if (type == TYPE_BIGINT) {
+            assert(len == sizeof(int64_t));
+            *(int64_t *)(raw->data) = bigint_val;
         } else if (type == TYPE_FLOAT) {
             assert(len == sizeof(float));
             *(float *)(raw->data) = float_val;
