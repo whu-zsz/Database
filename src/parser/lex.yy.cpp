@@ -1158,7 +1158,13 @@ YY_RULE_SETUP
 {
     errno = 0;
     long long val = strtoll(yytext, NULL, 10);
-    if (errno == ERANGE || val > INT32_MAX || val < INT32_MIN) {
+    if (errno == ERANGE) {
+        // Overflow detected - return a special value that will cause failure
+        // We'll use INT64_MAX as a marker for overflow
+        yylval->sv_bigint = INT64_MAX;
+        return VALUE_BIGINT;
+    } else if (val > INT32_MAX || val < INT32_MIN) {
+        // Valid BIGINT but out of INT range
         yylval->sv_bigint = val;
         return VALUE_BIGINT;
     } else {
@@ -1169,7 +1175,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 45:
 YY_RULE_SETUP
-#line 114 "lex.l"
+#line 120 "lex.l"
 {
     yylval->sv_float = atof(yytext);
     return VALUE_FLOAT;
@@ -1178,7 +1184,7 @@ YY_RULE_SETUP
 case 46:
 /* rule 46 can match eol */
 YY_RULE_SETUP
-#line 118 "lex.l"
+#line 124 "lex.l"
 {
     yylval->sv_str = std::string(yytext + 1, strlen(yytext) - 2);
     return VALUE_STRING;
@@ -1187,21 +1193,21 @@ YY_RULE_SETUP
 /* EOF */
 case YY_STATE_EOF(INITIAL):
 case YY_STATE_EOF(STATE_COMMENT):
-#line 123 "lex.l"
+#line 129 "lex.l"
 { return T_EOF; }
 	YY_BREAK
 /* unexpected char */
 case 47:
 YY_RULE_SETUP
-#line 125 "lex.l"
+#line 131 "lex.l"
 { std::cerr << "Lexer Error: unexpected character " << yytext[0] << std::endl; }
 	YY_BREAK
 case 48:
 YY_RULE_SETUP
-#line 126 "lex.l"
+#line 132 "lex.l"
 ECHO;
 	YY_BREAK
-#line 1204 "lex.yy.cpp"
+#line 1210 "lex.yy.cpp"
 
 	case YY_END_OF_BUFFER:
 		{
@@ -2167,6 +2173,6 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 126 "lex.l"
+#line 132 "lex.l"
 
 

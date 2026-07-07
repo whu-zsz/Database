@@ -21,10 +21,11 @@ static int const_offset = -1;
 
 class Context {
 public:
-    Context (LockManager *lock_mgr, LogManager *log_mgr, 
-            Transaction *txn, char *data_send = nullptr, int *offset = &const_offset)
+    Context (LockManager *lock_mgr, LogManager *log_mgr,
+            Transaction *txn, char *data_send = nullptr, int *offset = &const_offset,
+            std::string db_name = "")
         : lock_mgr_(lock_mgr), log_mgr_(log_mgr), txn_(txn),
-          data_send_(data_send), offset_(offset) {
+          data_send_(data_send), offset_(offset), db_name_(db_name) {
             ellipsis_ = false;
           }
 
@@ -35,4 +36,5 @@ public:
     char *data_send_;
     int *offset_;
     bool ellipsis_;
+    std::string db_name_;
 };

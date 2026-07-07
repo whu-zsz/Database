@@ -102,7 +102,13 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 {value_int} {
     errno = 0;
     long long val = strtoll(yytext, NULL, 10);
-    if (errno == ERANGE || val > INT32_MAX || val < INT32_MIN) {
+    if (errno == ERANGE) {
+        // Overflow detected - return a special value that will cause failure
+        // We'll use INT64_MAX as a marker for overflow
+        yylval->sv_bigint = INT64_MAX;
+        return VALUE_BIGINT;
+    } else if (val > INT32_MAX || val < INT32_MIN) {
+        // Valid BIGINT but out of INT range
         yylval->sv_bigint = val;
         return VALUE_BIGINT;
     } else {

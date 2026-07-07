@@ -28,6 +28,7 @@ See the Mulan PSL v2 for more details. */
 #define MAX_CONN_LIMIT 8
 
 static bool should_exit = false;
+static std::string g_db_name;
 
 // 构建全局所需的管理器对象
 auto disk_manager = std::make_unique<DiskManager>();
@@ -115,7 +116,7 @@ void *client_handler(void *sock_fd) {
         offset = 0;
 
         // 开启事务，初始化系统所需的上下文信息（包括事务对象指针、锁管理器指针、日志管理器指针、存放结果的buffer、记录结果长度的变量）
-        Context *context = new Context(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset);
+        Context *context = new Context(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset, g_db_name);
         SetTransaction(&txn_id, context);
 
         // 用于判断是否已经调用了yy_delete_buffer来删除buf
@@ -152,17 +153,16 @@ void *client_handler(void *sock_fd) {
                     outfile << str;
                     outfile.close();
                 } catch (RMDBError &e) {
-                    // 遇到异常，需要打印failure到output.txt文件中，并发异常信息返回给客户端
+                    // 遇到异常，需要打印failure到output.txt文件中，并发failure信息返回给客户端
                     std::cerr << e.what() << std::endl;
 
-                    memcpy(data_send, e.what(), e.get_msg_len());
-                    data_send[e.get_msg_len()] = '\n';
-                    data_send[e.get_msg_len() + 1] = '\0';
-                    offset = e.get_msg_len() + 1;
+                    std::string failure_str = "failure\n";
+                    memcpy(data_send, failure_str.c_str(), failure_str.length());
+                    offset = failure_str.length();
 
-                    // 将报错信息写入output.txt
+                    // 将failure写入output.txt（当前目录，即数据库目录）
                     std::fstream outfile;
-                    outfile.open("output.txt",std::ios::out | std::ios::app);
+                    outfile.open("output.txt", std::ios::out | std::ios::app);
                     outfile << "failure\n";
                     outfile.close();
                 }
@@ -283,6 +283,7 @@ int main(int argc, char **argv) {
                      "\n";
         // Database name is passed by args
         std::string db_name = argv[1];
+        g_db_name = db_name;
         if (!sm_manager->is_dir(db_name)) {
             // Database not found, create a new one
             sm_manager->create_db(db_name);

@@ -144,6 +144,17 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     // print header into file
     std::fstream outfile;
     outfile.open("output.txt", std::ios::out | std::ios::app);
+    // Also write to build directory if we're in a database subdirectory
+    std::fstream outfile2;
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+        std::string current_dir(cwd);
+        // Check if we're in a subdirectory (database directory)
+        if (current_dir.find("build") == std::string::npos) {
+            // We're not in build directory, try to write to build/database_name/output.txt
+            outfile2.open("../build/output.txt", std::ios::out | std::ios::app);
+        }
+    }
     outfile << "|";
     for(int i = 0; i < captions.size(); ++i) {
         outfile << " " << captions[i] << " |";

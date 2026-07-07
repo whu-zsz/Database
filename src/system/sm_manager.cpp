@@ -88,6 +88,11 @@ void SmManager::open_db(const std::string& db_name) {
     if (!is_dir(db_name)) {
         throw DatabaseNotFoundError(db_name);
     }
+    // 记录原始路径
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+        original_path_ = cwd;
+    }
     // 进入数据库目录
     if (chdir(db_name.c_str()) < 0) {
         throw UnixError();

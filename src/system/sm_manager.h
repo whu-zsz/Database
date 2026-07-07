@@ -35,6 +35,7 @@ class SmManager {
     BufferPoolManager* buffer_pool_manager_;
     RmManager* rm_manager_;
     IxManager* ix_manager_;
+    std::string original_path_;  // 服务器启动时的原始路径
 
    public:
     SmManager(DiskManager* disk_manager, BufferPoolManager* buffer_pool_manager, RmManager* rm_manager,
