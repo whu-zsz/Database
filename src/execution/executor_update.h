@@ -57,6 +57,31 @@ class UpdateExecutor : public AbstractExecutor {
             set_vals.push_back({col_it->offset, set_clause.rhs.raw->data, col_it->len});
         }
         for (auto &rid : rids_) {
+            auto old_rec = fh_->get_record(rid, context_);
+            if (old_rec == nullptr) continue;
+            auto new_buf = new char[fh_->get_file_hdr().record_size];
+            memcpy(new_buf, old_rec->data, fh_->get_file_hdr().record_size);
+            for (auto &sv : set_vals) {
+                memcpy(new_buf + std::get<0>(sv), std::get<1>(sv), std::get<2>(sv));
+            }
+            for (auto &index : tab_.indexes) {
+                auto ih = sm_manager_->ihs_.at(
+                    sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                std::vector<char> key(index.col_tot_len);
+                int offset = 0;
+                for (size_t j = 0; j < index.col_num; ++j) {
+                    memcpy(key.data() + offset, new_buf + index.cols[j].offset, index.cols[j].len);
+                    offset += index.cols[j].len;
+                }
+                std::vector<Rid> exists;
+                if (ih->get_value(key.data(), &exists, context_->txn_) && !exists.empty() && exists[0] != rid) {
+                    delete[] new_buf;
+                    throw InternalError("Duplicate index key");
+                }
+            }
+            delete[] new_buf;
+        }
+        for (auto &rid : rids_) {
             // 获取原记录
             auto old_rec = fh_->get_record(rid, context_);
             if (old_rec == nullptr) continue;

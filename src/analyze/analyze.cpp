@@ -48,6 +48,27 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         //处理where条件
         get_clause(x->conds, query->conds);
         check_clause(query->tables, query->conds);
+    } else if (auto x = std::dynamic_pointer_cast<ast::AggregateSelectStmt>(parse)) {
+        query->is_aggregate = true;
+        query->tables = std::move(x->tabs);
+        if (query->tables.size() != 1) {
+            throw InternalError("Aggregate only supports one table");
+        }
+        std::vector<ColMeta> all_cols;
+        get_all_cols(query->tables, all_cols);
+        switch (x->agg->type) {
+            case ast::SV_AGG_SUM: query->agg.type = AGG_SUM; break;
+            case ast::SV_AGG_MAX: query->agg.type = AGG_MAX; break;
+            case ast::SV_AGG_MIN: query->agg.type = AGG_MIN; break;
+            case ast::SV_AGG_COUNT: query->agg.type = AGG_COUNT; break;
+        }
+        query->agg.count_star = x->agg->count_star;
+        query->agg.alias = x->agg->alias;
+        if (!query->agg.count_star) {
+            query->agg.col = check_column(all_cols, {.tab_name = x->agg->col->tab_name, .col_name = x->agg->col->col_name});
+        }
+        get_clause(x->conds, query->conds);
+        check_clause(query->tables, query->conds);
     } else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(parse)) {
         // 处理where条件
         get_clause(x->conds, query->conds);

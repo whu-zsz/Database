@@ -34,6 +34,8 @@ class Query{
     std::vector<SetClause> set_clauses;
     //insert 的values值
     std::vector<Value> values;
+    bool is_aggregate = false;
+    AggCall agg;
 
     Query(){}
 

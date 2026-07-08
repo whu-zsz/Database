@@ -31,6 +31,8 @@ class IndexScanExecutor : public AbstractExecutor {
 
     Rid rid_;
     std::unique_ptr<RecScan> scan_;
+    std::vector<Rid> rids_;
+    size_t rid_pos_ = 0;
 
     SmManager *sm_manager_;
 
@@ -65,16 +67,138 @@ class IndexScanExecutor : public AbstractExecutor {
     }
 
     void beginTuple() override {
-        
+        rids_.clear();
+        rid_pos_ = 0;
+        auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_meta_.cols)).get();
+        std::vector<char> key(index_meta_.col_tot_len);
+        if (build_exact_key(key.data())) {
+            ih->get_value(key.data(), &rids_, context_->txn_);
+        } else {
+            for (IxScan scan(ih, ih->leaf_begin(), ih->leaf_end(), sm_manager_->get_bpm()); !scan.is_end(); scan.next()) {
+                rids_.push_back(scan.rid());
+            }
+        }
+        while (rid_pos_ < rids_.size() && !check_conds(rids_[rid_pos_])) {
+            rid_pos_++;
+        }
+        if (rid_pos_ < rids_.size()) {
+            rid_ = rids_[rid_pos_];
+        }
     }
 
     void nextTuple() override {
-        
+        if (rid_pos_ < rids_.size()) rid_pos_++;
+        while (rid_pos_ < rids_.size() && !check_conds(rids_[rid_pos_])) {
+            rid_pos_++;
+        }
+        if (rid_pos_ < rids_.size()) {
+            rid_ = rids_[rid_pos_];
+        }
     }
+
+    bool is_end() const override { return rid_pos_ >= rids_.size(); }
 
     std::unique_ptr<RmRecord> Next() override {
-        return nullptr;
+        return fh_->get_record(rid_, context_);
     }
 
+    const std::vector<ColMeta> &cols() const override { return cols_; }
+    size_t tupleLen() const override { return len_; }
     Rid &rid() override { return rid_; }
+
+   private:
+    bool build_exact_key(char *key) {
+        int offset = 0;
+        for (auto &idx_col : index_meta_.cols) {
+            auto it = std::find_if(fed_conds_.begin(), fed_conds_.end(), [&](const Condition &cond) {
+                return cond.is_rhs_val && cond.op == OP_EQ && cond.lhs_col.tab_name == tab_name_ &&
+                       cond.lhs_col.col_name == idx_col.name;
+            });
+            if (it == fed_conds_.end()) return false;
+            memcpy(key + offset, it->rhs_val.raw->data, idx_col.len);
+            offset += idx_col.len;
+        }
+        return true;
+    }
+
+    bool check_conds(const Rid &rid) {
+        if (fed_conds_.empty()) return true;
+        auto rec = fh_->get_record(rid, context_);
+        if (rec == nullptr) return false;
+        for (auto &cond : fed_conds_) {
+            if (!cond.is_rhs_val || cond.lhs_col.tab_name != tab_name_) continue;
+            auto col_it = std::find_if(cols_.begin(), cols_.end(),
+                [&](const ColMeta &c) { return c.name == cond.lhs_col.col_name; });
+            if (col_it == cols_.end()) continue;
+            char *data = rec->data + col_it->offset;
+            if (col_it->type == TYPE_INT) {
+                int val = *(int *)data;
+                int rhs = (cond.rhs_val.type == TYPE_INT) ? cond.rhs_val.int_val : (int)cond.rhs_val.float_val;
+                if (!cmp_int(cond.op, val, rhs)) return false;
+            } else if (col_it->type == TYPE_BIGINT) {
+                int64_t val = *(int64_t *)data;
+                int64_t rhs = (cond.rhs_val.type == TYPE_BIGINT || cond.rhs_val.type == TYPE_DATETIME) ? cond.rhs_val.bigint_val : (int64_t)cond.rhs_val.int_val;
+                if (!cmp_bigint(cond.op, val, rhs)) return false;
+            } else if (col_it->type == TYPE_FLOAT) {
+                float val = *(float *)data;
+                float rhs = (cond.rhs_val.type == TYPE_FLOAT) ? cond.rhs_val.float_val : (float)cond.rhs_val.int_val;
+                if (!cmp_float(cond.op, val, rhs)) return false;
+            } else if (col_it->type == TYPE_DATETIME) {
+                int64_t val = *(int64_t *)data;
+                int64_t rhs = cond.rhs_val.bigint_val;
+                if (!cmp_bigint(cond.op, val, rhs)) return false;
+            } else if (col_it->type == TYPE_STRING) {
+                std::string val(data, col_it->len);
+                val.resize(strlen(val.c_str()));
+                std::string rhs = cond.rhs_val.str_val;
+                if (!cmp_str(cond.op, val, rhs)) return false;
+            }
+        }
+        return true;
+    }
+
+    bool cmp_int(CompOp op, int l, int r) {
+        switch (op) {
+            case OP_EQ: return l == r;
+            case OP_NE: return l != r;
+            case OP_LT: return l < r;
+            case OP_GT: return l > r;
+            case OP_LE: return l <= r;
+            case OP_GE: return l >= r;
+        }
+        return false;
+    }
+    bool cmp_bigint(CompOp op, int64_t l, int64_t r) {
+        switch (op) {
+            case OP_EQ: return l == r;
+            case OP_NE: return l != r;
+            case OP_LT: return l < r;
+            case OP_GT: return l > r;
+            case OP_LE: return l <= r;
+            case OP_GE: return l >= r;
+        }
+        return false;
+    }
+    bool cmp_float(CompOp op, float l, float r) {
+        switch (op) {
+            case OP_EQ: return l == r;
+            case OP_NE: return l != r;
+            case OP_LT: return l < r;
+            case OP_GT: return l > r;
+            case OP_LE: return l <= r;
+            case OP_GE: return l >= r;
+        }
+        return false;
+    }
+    bool cmp_str(CompOp op, const std::string &l, const std::string &r) {
+        switch (op) {
+            case OP_EQ: return l == r;
+            case OP_NE: return l != r;
+            case OP_LT: return l < r;
+            case OP_GT: return l > r;
+            case OP_LE: return l <= r;
+            case OP_GE: return l >= r;
+        }
+        return false;
+    }
 };

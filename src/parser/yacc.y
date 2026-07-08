@@ -23,6 +23,7 @@ using namespace ast;
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY
 WHERE UPDATE SET SELECT INT BIGINT DATETIME CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY
+%token SUM MAX MIN COUNT AS
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
 
@@ -51,6 +52,7 @@ WHERE UPDATE SET SELECT INT BIGINT DATETIME CHAR FLOAT INDEX AND JOIN EXIT HELP 
 %type <sv_conds> whereClause optWhereClause
 %type <sv_orderby>  order_clause opt_order_clause
 %type <sv_orderby_dir> opt_asc_desc
+%type <sv_agg> aggregateSelector
 
 %%
 start:
@@ -107,6 +109,10 @@ dbStmt:
     {
         $$ = std::make_shared<ShowTables>();
     }
+    |   SHOW INDEX FROM tbName
+    {
+        $$ = std::make_shared<ShowIndex>($4);
+    }
     ;
 
 ddl:
@@ -148,6 +154,10 @@ dml:
     |   SELECT selector FROM tableList optWhereClause opt_order_clause
     {
         $$ = std::make_shared<SelectStmt>($2, $4, $5, $6);
+    }
+    |   SELECT aggregateSelector FROM tableList optWhereClause
+    {
+        $$ = std::make_shared<AggregateSelectStmt>($2, $4, $5);
     }
     ;
 
@@ -343,6 +353,29 @@ selector:
         $$ = {};
     }
     |   colList
+    ;
+
+aggregateSelector:
+        SUM '(' col ')' AS colName
+    {
+        $$ = std::make_shared<AggExpr>(SV_AGG_SUM, false, $3, $6);
+    }
+    |   MAX '(' col ')' AS colName
+    {
+        $$ = std::make_shared<AggExpr>(SV_AGG_MAX, false, $3, $6);
+    }
+    |   MIN '(' col ')' AS colName
+    {
+        $$ = std::make_shared<AggExpr>(SV_AGG_MIN, false, $3, $6);
+    }
+    |   COUNT '(' col ')' AS colName
+    {
+        $$ = std::make_shared<AggExpr>(SV_AGG_COUNT, false, $3, $6);
+    }
+    |   COUNT '(' '*' ')' AS colName
+    {
+        $$ = std::make_shared<AggExpr>(SV_AGG_COUNT, true, nullptr, $6);
+    }
     ;
 
 tableList:

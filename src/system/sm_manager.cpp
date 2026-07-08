@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "index/ix.h"
 #include "record/rm.h"
+#include "record/rm_scan.h"
 #include "record_printer.h"
 
 /**
@@ -174,6 +175,30 @@ void SmManager::show_tables(Context* context) {
     outfile.close();
 }
 
+void SmManager::show_index(const std::string& tab_name, Context* context) {
+    if (!db_.is_table(tab_name)) {
+        throw TableNotFoundError(tab_name);
+    }
+    TabMeta &tab = db_.get_table(tab_name);
+    std::fstream outfile;
+    outfile.open("output.txt", std::ios::out | std::ios::app);
+    for (auto &index : tab.indexes) {
+        std::string cols = "(";
+        for (int i = 0; i < index.col_num; ++i) {
+            if (i > 0) cols += ",";
+            cols += index.cols[i].name;
+        }
+        cols += ")";
+        std::string line = "| " + tab.name + " | unique | " + cols + " |\n";
+        outfile << line;
+        if (context != nullptr && context->data_send_ != nullptr && context->offset_ != nullptr) {
+            memcpy(context->data_send_ + *(context->offset_), line.c_str(), line.size());
+            *(context->offset_) += line.size();
+        }
+    }
+    outfile.close();
+}
+
 /**
  * @description: 显示表的元数据
  * @param {string&} tab_name 表名称
@@ -307,6 +332,28 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
     for (auto &col_name : col_names) {
         auto it = tab.get_col(col_name);
         it->index = true;
+    }
+    auto ih = ihs_.at(ix_name).get();
+    RmFileHandle *fh = fhs_.at(tab_name).get();
+    for (RmScan scan(fh); !scan.is_end(); scan.next()) {
+        auto rec = fh->get_record(scan.rid(), context);
+        std::vector<char> key(index_meta.col_tot_len);
+        int offset = 0;
+        for (auto &col : index_meta.cols) {
+            memcpy(key.data() + offset, rec->data + col.offset, col.len);
+            offset += col.len;
+        }
+        if (ih->insert_entry(key.data(), scan.rid(), context ? context->txn_ : nullptr) == IX_NO_PAGE) {
+            ihs_.erase(ix_name);
+            ix_manager_->destroy_index(tab_name, col_names);
+            tab.indexes.pop_back();
+            for (auto &name : col_names) {
+                auto it = tab.get_col(name);
+                it->index = false;
+            }
+            flush_meta();
+            throw InternalError("Duplicate index key");
+        }
     }
     // 元数据刷盘
     flush_meta();

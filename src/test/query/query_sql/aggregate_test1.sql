@@ -1,0 +1,6 @@
+create table aggregate (id int,val float);
+insert into aggregate values(1,5.5);
+insert into aggregate values(3,4.5);
+insert into aggregate values(5,10.0);
+select SUM(id) as sum_id from aggregate;
+select SUM(val) as sum_val from aggregate;

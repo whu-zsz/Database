@@ -92,6 +92,11 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 "ORDER" { return ORDER; }
 "BY" {  return BY;  }
 "ASC" { return ASC; }
+"SUM" { return SUM; }
+"MAX" { return MAX; }
+"MIN" { return MIN; }
+"COUNT" { return COUNT; }
+"AS" { return AS; }
     /* operators */
 ">=" { return GEQ; }
 "<=" { return LEQ; }

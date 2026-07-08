@@ -31,6 +31,12 @@ inline int ix_compare(const char *a, const char *b, ColType type, int col_len) {
         }
         case TYPE_STRING:
             return memcmp(a, b, col_len);
+        case TYPE_BIGINT:
+        case TYPE_DATETIME: {
+            int64_t ia = *(int64_t *)a;
+            int64_t ib = *(int64_t *)b;
+            return (ia < ib) ? -1 : ((ia > ib) ? 1 : 0);
+        }
         default:
             throw InternalError("Unexpected data type");
     }
@@ -71,7 +77,7 @@ class IxNodeHandle {
 
     void set_size(int size) { page_hdr->num_key = size; }
 
-    int get_max_size() { return file_hdr->btree_order_ + 1; }
+    int get_max_size() { return file_hdr->btree_order_; }
 
     int get_min_size() { return get_max_size() / 2; }
 

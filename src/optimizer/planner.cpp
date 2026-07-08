@@ -25,12 +25,23 @@ See the Mulan PSL v2 for more details. */
 // 目前的索引匹配规则为：完全匹配索引字段，且全部为单点查询，不会自动调整where条件的顺序
 bool Planner::get_index_cols(std::string tab_name, std::vector<Condition> curr_conds, std::vector<std::string>& index_col_names) {
     index_col_names.clear();
-    for(auto& cond: curr_conds) {
-        if(cond.is_rhs_val && cond.op == OP_EQ && cond.lhs_col.tab_name.compare(tab_name) == 0)
-            index_col_names.push_back(cond.lhs_col.col_name);
-    }
     TabMeta& tab = sm_manager_->db_.get_table(tab_name);
-    if(tab.is_index(index_col_names)) return true;
+    for (auto &index : tab.indexes) {
+        bool all_eq = true;
+        for (auto &idx_col : index.cols) {
+            bool has_eq = false;
+            for (auto &cond : curr_conds) {
+                if (cond.is_rhs_val && cond.lhs_col.tab_name == tab_name && cond.lhs_col.col_name == idx_col.name) {
+                    if (cond.op == OP_EQ) has_eq = true;
+                }
+            }
+            if (!has_eq) all_eq = false;
+        }
+        if (all_eq) {
+            for (auto &idx_col : index.cols) index_col_names.push_back(idx_col.name);
+            return true;
+        }
+    }
     return false;
 }
 
@@ -369,6 +380,15 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         // 生成select语句的查询执行计划
         std::shared_ptr<Plan> projection = generate_select_plan(std::move(query), context);
         plannerRoot = std::make_shared<DMLPlan>(T_select, projection, std::string(), std::vector<Value>(),
+                                                    std::vector<Condition>(), std::vector<SetClause>());
+    } else if (auto x = std::dynamic_pointer_cast<ast::AggregateSelectStmt>(query->parse)) {
+        std::vector<std::string> index_col_names;
+        bool index_exist = get_index_cols(query->tables[0], query->conds, index_col_names);
+        std::shared_ptr<Plan> scan = std::make_shared<ScanPlan>(
+            index_exist ? T_IndexScan : T_SeqScan, sm_manager_, query->tables[0], query->conds,
+            index_exist ? index_col_names : std::vector<std::string>());
+        std::shared_ptr<Plan> aggregate = std::make_shared<AggregatePlan>(T_Aggregate, scan, query->agg);
+        plannerRoot = std::make_shared<DMLPlan>(T_select, aggregate, std::string(), std::vector<Value>(),
                                                     std::vector<Condition>(), std::vector<SetClause>());
     } else {
         throw InternalError("Unexpected AST root");

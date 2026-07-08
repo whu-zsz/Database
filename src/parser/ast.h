@@ -32,6 +32,10 @@ enum OrderByDir {
     OrderBy_DESC
 };
 
+enum SvAggType {
+    SV_AGG_SUM, SV_AGG_MAX, SV_AGG_MIN, SV_AGG_COUNT
+};
+
 // Base class for tree nodes
 struct TreeNode {
     virtual ~TreeNode() = default;  // enable polymorphism
@@ -41,6 +45,12 @@ struct Help : public TreeNode {
 };
 
 struct ShowTables : public TreeNode {
+};
+
+struct ShowIndex : public TreeNode {
+    std::string tab_name;
+
+    ShowIndex(std::string tab_name_) : tab_name(std::move(tab_name_)) {}
 };
 
 struct TxnBegin : public TreeNode {
@@ -172,6 +182,16 @@ struct OrderBy : public TreeNode
        cols(std::move(cols_)), orderby_dir(std::move(orderby_dir_)) {}
 };
 
+struct AggExpr : public TreeNode {
+    SvAggType type;
+    bool count_star;
+    std::shared_ptr<Col> col;
+    std::string alias;
+
+    AggExpr(SvAggType type_, bool count_star_, std::shared_ptr<Col> col_, std::string alias_) :
+            type(type_), count_star(count_star_), col(std::move(col_)), alias(std::move(alias_)) {}
+};
+
 struct InsertStmt : public TreeNode {
     std::string tab_name;
     std::vector<std::shared_ptr<Value>> vals;
@@ -231,6 +251,17 @@ struct SelectStmt : public TreeNode {
             }
 };
 
+struct AggregateSelectStmt : public TreeNode {
+    std::shared_ptr<AggExpr> agg;
+    std::vector<std::string> tabs;
+    std::vector<std::shared_ptr<BinaryExpr>> conds;
+
+    AggregateSelectStmt(std::shared_ptr<AggExpr> agg_,
+                        std::vector<std::string> tabs_,
+                        std::vector<std::shared_ptr<BinaryExpr>> conds_) :
+            agg(std::move(agg_)), tabs(std::move(tabs_)), conds(std::move(conds_)) {}
+};
+
 // Semantic value
 struct SemValue {
     int sv_int;
@@ -238,6 +269,7 @@ struct SemValue {
     float sv_float;
     std::string sv_str;
     OrderByDir sv_orderby_dir;
+    SvAggType sv_agg_type;
     std::vector<std::string> sv_strs;
 
     std::shared_ptr<TreeNode> sv_node;
@@ -264,6 +296,7 @@ struct SemValue {
     std::vector<std::shared_ptr<BinaryExpr>> sv_conds;
 
     std::shared_ptr<OrderBy> sv_orderby;
+    std::shared_ptr<AggExpr> sv_agg;
 };
 
 extern std::shared_ptr<ast::TreeNode> parse_tree;

@@ -28,6 +28,15 @@ struct TabCol {
     }
 };
 
+enum AggType { AGG_NONE, AGG_SUM, AGG_MAX, AGG_MIN, AGG_COUNT };
+
+struct AggCall {
+    AggType type = AGG_NONE;
+    bool count_star = false;
+    TabCol col;
+    std::string alias;
+};
+
 struct Value {
     ColType type;  // type of value
     union {

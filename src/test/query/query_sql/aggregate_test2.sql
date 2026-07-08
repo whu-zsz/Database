@@ -1,0 +1,6 @@
+create table aggregate (id int,val float);
+insert into aggregate values(1,5.5);
+insert into aggregate values(3,4.5);
+insert into aggregate values(5,10.0);
+select MAX(id) as max_id from aggregate;
+select MIN(val) as min_val from aggregate;
