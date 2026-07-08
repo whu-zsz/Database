@@ -22,6 +22,15 @@ See the Mulan PSL v2 for more details. */
 #include "index/ix.h"
 #include "record_printer.h"
 
+// 判断是否应该使用 BNLJ：存在非等值连接条件时用 BNLJ
+static PlanTag choose_join_type(const std::vector<Condition> &conds) {
+    if (conds.empty()) return T_NestLoop;
+    for (auto &cond : conds) {
+        if (cond.op != OP_EQ) return T_BlockNestLoop;
+    }
+    return T_NestLoop;
+}
+
 // 目前的索引匹配规则为：完全匹配索引字段，且全部为单点查询，不会自动调整where条件的顺序
 bool Planner::get_index_cols(std::string tab_name, std::vector<Condition> curr_conds, std::vector<std::string>& index_col_names) {
     index_col_names.clear();
@@ -198,7 +207,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
             right = pop_scan(scantbl, it->rhs_col.tab_name, joined_tables, table_scan_executors);
             std::vector<Condition> join_conds{*it};
             //建立join
-            table_join_executors = std::make_shared<JoinPlan>(T_NestLoop, std::move(left), std::move(right), join_conds);
+            table_join_executors = std::make_shared<JoinPlan>(choose_join_type(join_conds), std::move(left), std::move(right), join_conds);
             it = conds.erase(it);
             break;
         }
@@ -218,12 +227,12 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
 
             if(left_need_to_join_executors != nullptr && right_need_to_join_executors != nullptr) {
                 std::vector<Condition> join_conds{*it};
-                std::shared_ptr<Plan> temp_join_executors = std::make_shared<JoinPlan>(T_NestLoop, 
-                                                                    std::move(left_need_to_join_executors), 
-                                                                    std::move(right_need_to_join_executors), 
+                std::shared_ptr<Plan> temp_join_executors = std::make_shared<JoinPlan>(choose_join_type(join_conds),
+                                                                    std::move(left_need_to_join_executors),
+                                                                    std::move(right_need_to_join_executors),
                                                                     join_conds);
-                table_join_executors = std::make_shared<JoinPlan>(T_NestLoop, std::move(temp_join_executors), 
-                                                                    std::move(table_join_executors), 
+                table_join_executors = std::make_shared<JoinPlan>(T_NestLoop, std::move(temp_join_executors),
+                                                                    std::move(table_join_executors),
                                                                     std::vector<Condition>());
             } else if(left_need_to_join_executors != nullptr || right_need_to_join_executors != nullptr) {
                 if(isneedreverse) {
@@ -235,7 +244,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
                     left_need_to_join_executors = std::move(right_need_to_join_executors);
                 }
                 std::vector<Condition> join_conds{*it};
-                table_join_executors = std::make_shared<JoinPlan>(T_NestLoop, std::move(left_need_to_join_executors), 
+                table_join_executors = std::make_shared<JoinPlan>(choose_join_type(join_conds), std::move(left_need_to_join_executors),
                                                                     std::move(table_join_executors), join_conds);
             } else {
                 push_conds(std::move(&(*it)), table_join_executors);

@@ -1,0 +1,13 @@
+create table t1 (id int, name char(8));
+create table t2 (t_id int, score float);
+insert into t1 values (1, 'aaa');
+insert into t1 values (2, 'bbb');
+insert into t1 values (3, 'ccc');
+insert into t1 values (4, 'ddd');
+insert into t1 values (5, 'eee');
+insert into t2 values (1, 90.0);
+insert into t2 values (2, 85.5);
+insert into t2 values (3, 70.0);
+insert into t2 values (5, 95.5);
+insert into t2 values (10, 60.0);
+select * from t1, t2 where t1.id < t2.t_id and t2.t_id < 1000;

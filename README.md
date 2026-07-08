@@ -39,8 +39,10 @@
 | [src/execution/executor_projection.h](src/execution/executor_projection.h) | 列投影 |
 | [src/execution/executor_nestedloop_join.h](src/execution/executor_nestedloop_join.h) | 嵌套循环连接（支持等值/非等值/笛卡尔积） |
 | [src/execution/execution_sort.h](src/execution/execution_sort.h) | 多列 ORDER BY + LIMIT（INT/BIGINT/FLOAT/DATETIME/STRING, ASC/DESC） |
+| [src/execution/executor_aggregate.h](src/execution/executor_aggregate.h) | 聚合函数 SUM/MAX/MIN/COUNT，支持 COUNT(*)，AS 别名 |
+| [src/execution/executor_block_nestedloop_join.h](src/execution/executor_block_nestedloop_join.h) | 块嵌套循环连接，`JOIN_BUFFER_SIZE` 可配，对非等值连接自动选用 |
 
-#### 8. 语法扩展 (题目七 ORDER BY + LIMIT)
+#### 8. 语法扩展 (题目六～八: 聚合/ORDER BY+LIMIT/BNLJ)
 
 | 文件 | 说明 |
 |---|---|
@@ -49,7 +51,17 @@
 | [src/optimizer/plan.h](src/optimizer/plan.h) | `SortPlan` 支持多排序键 |
 | [src/optimizer/planner.cpp](src/optimizer/planner.cpp) | `generate_sort_plan` 遍历所有排序键 |
 | [src/execution/execution_sort.h](src/execution/execution_sort.h) | `SortExecutor` 多列排序实现 |
-| [src/portal.h](src/portal.h) | 多列排序 wired |
+| [src/portal.h](src/portal.h) | 多列排序 + Aggregate + BNLJ wired |
+| [src/common/config.h](src/common/config.h) | `JOIN_BUFFER_SIZE` BNLJ 缓冲区大小 |
+
+#### 9. BNLJ 块嵌套循环连接
+
+| 文件 | 说明 |
+|---|---|
+| [src/execution/executor_block_nestedloop_join.h](src/execution/executor_block_nestedloop_join.h) | BNLJ 执行器，`JOIN_BUFFER_SIZE` 字节 → 元组数动态计算 |
+| [src/optimizer/plan.h](src/optimizer/plan.h) | PlanTag 新增 `T_BlockNestLoop` |
+| [src/optimizer/planner.cpp](src/optimizer/planner.cpp) | `choose_join_type()` 检测非等值条件 → 自动选 BNLJ |
+| [src/common/config.h](src/common/config.h) | `JOIN_BUFFER_SIZE = 1MB`（平台 2GB 限制内可调） |
 
 #### 5. 数据类型扩展 (已完成 题目三/四)
 
@@ -68,9 +80,7 @@
 | 优先级 | 模块 | 涉及文件 |
 |---|---|---|
 | 1 | B+ 树索引核心算法 | [src/index/ix_index_handle.cpp](src/index/ix_index_handle.cpp)（`lower_bound`、`insert_entry`、`delete_entry`、`split`、`coalesce` 等 15+ 函数） |
-| 2 | 聚合函数 | AggregateExecutor（SUM/MAX/MIN/COUNT） |
-| 3 | 块嵌套循环连接 | BlockNestedLoopJoinExecutor |
-| 4 | 完整事务与锁 | LockManager（2PL + No-Wait）、LogManager（WAL）、RecoveryManager |
+| 2 | 完整事务与锁 | LockManager（2PL + No-Wait）、LogManager（WAL）、RecoveryManager |
 
 ## 项目结构
 
@@ -79,7 +89,7 @@ rmdb/
 ├── src/
 │   ├── analyze/      # 语义分析 ✅ (UpdateStmt 已补全)
 │   ├── common/       # 公共定义 (config, context, Value, Condition)
-│   ├── execution/    # 执行器 (火山模型算子) ✅ 6 个算子
+│   ├── execution/    # 执行器 (火山模型算子) ✅ 9 个算子
 │   ├── index/        # B+ 树索引 (框架完成，核心算法待实现)
 │   ├── optimizer/    # 查询优化器 (框架完成)
 │   ├── parser/       # 词法/语法分析 (flex/bison)

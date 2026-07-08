@@ -6,7 +6,7 @@
 
 ## 0. 当前实现进度
 
-### 已完成模块（题目一～四 + 题目七全部通过）
+### 已完成模块（题目一～四 + 题目六～八全部通过）
 
 | 模块 | 已完成内容 |
 |:---|:---|
@@ -23,23 +23,23 @@
 | | `ProjectionExecutor`: 委托子节点, Next() 中按 sel_idxs_ 投影裁剪 |
 | | `NestedLoopJoinExecutor`: 双循环 + check_current_match (跨表字段查找 + 条件判断), 支持笛卡尔积/等值/非等值连接 |
 | | `SortExecutor`: 多列排序 (`std::sort` + compare 逐键比较), 支持 INT/BIGINT/FLOAT/DATETIME/STRING, ASC/DESC, LIMIT |
+| | `AggregateExecutor`: SUM/MAX/MIN/COUNT, 支持 COUNT(*), AS 别名 |
+| | `BlockNestedLoopJoinExecutor`: 块嵌套循环连接, `JOIN_BUFFER_SIZE` 可配, 对非等值连接自动选用 BNLJ |
 | **Transaction** | `begin`: 新建 Transaction, 分配 txn_id/start_ts, 状态 GROWING, 加入 txn_map |
 | | `commit`/`abort`: 设置 COMMITTED/ABORTED 状态 (保留在 txn_map 以便 SetTransaction 检测并建新事务) |
 | **Analyze** | 补全 `UpdateStmt` 的 WHERE 条件提取 + SET 子句转换 |
 | **Portal** | UPDATE 匹配 0 行时 throw InternalError 输出 `failure` |
 | **BIGINT** | 8 字节有符号整数类型, 范围 [-9223372036854775808, 9223372036854775807], INT→BIGINT 自动提升, 超限返回 `failure` |
 | **DATETIME** | 格式 `YYYY-MM-DD HH:MM:SS`, 严格校验闰年+大小月+时分秒范围, 内部存为 int64_t (YYYYMMDDHHMMSS), STRING→DATETIME 自动转换, 非法返回 `failure` |
-| **Test** | `src/test/CMakeLists.txt` 添加 query_test 目标, `query_test_basic.py` 路径修复, `storage_test1/2.sql` 测试用例, `test_bigint.sh` 脚本, `query_test_orderby.py` 测试脚本 |
+| **Test** | `src/test/CMakeLists.txt` 添加 query_test 目标, `query_test_basic.py` 路径修复, `storage_test1/2.sql` 测试用例, `test_bigint.sh` 脚本, `query_test_orderby.py`/`query_test_join.py` 测试脚本, `aggregate_test1~3.sql` 测试用例 |
 
 ### 待实现模块
 
 | 优先级 | 模块 | 涉及内容 |
 |:---|:---|:---|
 | 1 | B+ 树索引核心 | `IxIndexHandle`: lower_bound, insert_entry, delete_entry, split, coalesce, redistribute 等 |
-| 2 | Aggregate | SUM/MAX/MIN/COUNT |
-| 3 | BlockNLJ | 块嵌套循环连接 |
-| 4 | LockManager | 2PL + No-Wait 死锁预防, 表级/行级锁 |
-| 5 | Log + Recovery | WAL, Analyze/Redo/Undo |
+| 2 | LockManager | 2PL + No-Wait 死锁预防, 表级/行级锁 |
+| 3 | Log + Recovery | WAL, Analyze/Redo/Undo |
 
 ### 关键踩坑记录
 
@@ -52,6 +52,8 @@
 - **BIGINT 溢出检测** — 在 lexer 中检测超出 int64_t 范围的 BIGINT 字面量，通过全局标志 `g_bigint_overflow` 传递 → rmdb.cpp 捕获后输出 `failure`
 - **DATETIME 校验** — 不能只判断字符串长度，必须校验: 年 1000-9999, 月 1-12, 日按月份+闰年, 时 0-23, 分/秒 0-59
 - **g_bigint_overflow 定义位置** — 该变量在 lex.l 中用 `extern` 引用，定义必须放在 libparser.a 中的源文件（如 ast.cpp），不能放在 rmdb.cpp（否则 test_parser 链接 parser 库时找不到符号）
+- **FLOAT 输出格式** — `std::to_string(float)` 不可移植，必须用 `snprintf("%.6f")` 保证 6 位小数
+- **BNLJ::beginTuple** — 必须调用 `left_->beginTuple()` 初始化左表迭代器，否则 `left_->is_end()` 默认返回 true，block 永远为空
 
 ---
 
