@@ -29,13 +29,13 @@ def compare_answer(db_name, answer_file):
     expected = {}
     with open(answer_file, "r", encoding="utf-8") as f:
         for line in f:
-            line = line.rstrip("\n")
+            line = line.rstrip("\r\n")
             if line:
                 expected[line] = expected.get(line, 0) + 1
     output = os.path.join("build", db_name, "output.txt")
     with open(output, "r", encoding="utf-8") as f:
         for line in f:
-            line = line.rstrip("\n")
+            line = line.rstrip("\r\n")
             if line:
                 expected[line] = expected.get(line, 0) - 1
     return {k: v for k, v in expected.items() if v != 0}

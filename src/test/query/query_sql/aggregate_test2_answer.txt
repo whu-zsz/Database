@@ -2,3 +2,7 @@
 | 5 |
 | min_val |
 | 4.500000 |
+| max_name |
+| uiophjkl |
+| min_name |
+| asdfhjkl |

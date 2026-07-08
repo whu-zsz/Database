@@ -4,6 +4,7 @@ RMDB is licensed under Mulan PSL v2. */
 #pragma once
 
 #include <cstring>
+#include <vector>
 #include "execution_defs.h"
 #include "executor_abstract.h"
 #include "system/sm.h"
@@ -66,6 +67,7 @@ class AggregateExecutor : public AbstractExecutor {
         float float_acc = 0;
         int int_best = 0;
         float float_best = 0;
+        std::vector<char> string_best;
 
         int value_offset = 0;
         ColType value_type = TYPE_INT;
@@ -94,6 +96,15 @@ class AggregateExecutor : public AbstractExecutor {
                 if (!has_value || (agg_.type == AGG_MAX && v > float_best) || (agg_.type == AGG_MIN && v < float_best)) {
                     float_best = v;
                 }
+            } else if (value_type == TYPE_STRING && agg_.type != AGG_SUM) {
+                if (!has_value) {
+                    string_best.assign(data, data + len_);
+                } else {
+                    int cmp = strncmp(data, string_best.data(), len_);
+                    if ((agg_.type == AGG_MAX && cmp > 0) || (agg_.type == AGG_MIN && cmp < 0)) {
+                        string_best.assign(data, data + len_);
+                    }
+                }
             } else {
                 throw IncompatibleTypeError("aggregate", coltype2str(value_type));
             }
@@ -106,6 +117,12 @@ class AggregateExecutor : public AbstractExecutor {
             *(int *)result_->data = (agg_.type == AGG_SUM) ? int_acc : int_best;
         } else if (value_type == TYPE_FLOAT) {
             *(float *)result_->data = (agg_.type == AGG_SUM) ? float_acc : float_best;
+        } else if (value_type == TYPE_STRING) {
+            if (!string_best.empty()) {
+                memcpy(result_->data, string_best.data(), len_);
+            } else {
+                memset(result_->data, 0, len_);
+            }
         }
     }
 };
