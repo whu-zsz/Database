@@ -134,18 +134,21 @@ class AggregatePlan : public Plan
 class SortPlan : public Plan
 {
     public:
-        SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, TabCol sel_col, bool is_desc)
+        SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan,
+                 std::vector<TabCol> sel_cols, std::vector<bool> is_desc, int limit = -1)
         {
             Plan::tag = tag;
             subplan_ = std::move(subplan);
-            sel_col_ = sel_col;
+            sel_cols_ = sel_cols;
             is_desc_ = is_desc;
+            limit_ = limit;
         }
         ~SortPlan(){}
         std::shared_ptr<Plan> subplan_;
-        TabCol sel_col_;
-        bool is_desc_;
-        
+        std::vector<TabCol> sel_cols_;
+        std::vector<bool> is_desc_;
+        int limit_;       // -1 means no limit
+
 };
 
 // dml语句，包括insert; delete; update; select语句　

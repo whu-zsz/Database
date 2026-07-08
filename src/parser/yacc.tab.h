@@ -35,8 +35,8 @@
    especially those whose name start with YY_ or yy_.  They are
    private implementation details that can be changed or removed.  */
 
-#ifndef YY_YY_MNT_C_USERS_MYRT1E_DOCUMENTS_RMDB_HEZUO_SRC_PARSER_YACC_TAB_H_INCLUDED
-# define YY_YY_MNT_C_USERS_MYRT1E_DOCUMENTS_RMDB_HEZUO_SRC_PARSER_YACC_TAB_H_INCLUDED
+#ifndef YY_YY_HOME_WHU_ZSZ_RMDB_RMDB_SRC_PARSER_YACC_TAB_H_INCLUDED
+# define YY_YY_HOME_WHU_ZSZ_RMDB_RMDB_SRC_PARSER_YACC_TAB_H_INCLUDED
 /* Debug traces.  */
 #ifndef YYDEBUG
 # define YYDEBUG 0
@@ -68,39 +68,40 @@ extern int yydebug;
     ASC = 269,                     /* ASC  */
     ORDER = 270,                   /* ORDER  */
     BY = 271,                      /* BY  */
-    WHERE = 272,                   /* WHERE  */
-    UPDATE = 273,                  /* UPDATE  */
-    SET = 274,                     /* SET  */
-    SELECT = 275,                  /* SELECT  */
-    INT = 276,                     /* INT  */
-    BIGINT = 277,                  /* BIGINT  */
-    DATETIME = 278,                /* DATETIME  */
-    CHAR = 279,                    /* CHAR  */
-    FLOAT = 280,                   /* FLOAT  */
-    INDEX = 281,                   /* INDEX  */
-    AND = 282,                     /* AND  */
-    JOIN = 283,                    /* JOIN  */
-    EXIT = 284,                    /* EXIT  */
-    HELP = 285,                    /* HELP  */
-    TXN_BEGIN = 286,               /* TXN_BEGIN  */
-    TXN_COMMIT = 287,              /* TXN_COMMIT  */
-    TXN_ABORT = 288,               /* TXN_ABORT  */
-    TXN_ROLLBACK = 289,            /* TXN_ROLLBACK  */
-    ORDER_BY = 290,                /* ORDER_BY  */
-    SUM = 291,                     /* SUM  */
-    MAX = 292,                     /* MAX  */
-    MIN = 293,                     /* MIN  */
-    COUNT = 294,                   /* COUNT  */
-    AS = 295,                      /* AS  */
-    LEQ = 296,                     /* LEQ  */
-    NEQ = 297,                     /* NEQ  */
-    GEQ = 298,                     /* GEQ  */
-    T_EOF = 299,                   /* T_EOF  */
-    IDENTIFIER = 300,              /* IDENTIFIER  */
-    VALUE_STRING = 301,            /* VALUE_STRING  */
-    VALUE_INT = 302,               /* VALUE_INT  */
-    VALUE_BIGINT = 303,            /* VALUE_BIGINT  */
-    VALUE_FLOAT = 304              /* VALUE_FLOAT  */
+    LIMIT = 272,                   /* LIMIT  */
+    WHERE = 273,                   /* WHERE  */
+    UPDATE = 274,                  /* UPDATE  */
+    SET = 275,                     /* SET  */
+    SELECT = 276,                  /* SELECT  */
+    INT = 277,                     /* INT  */
+    BIGINT = 278,                  /* BIGINT  */
+    DATETIME = 279,                /* DATETIME  */
+    CHAR = 280,                    /* CHAR  */
+    FLOAT = 281,                   /* FLOAT  */
+    INDEX = 282,                   /* INDEX  */
+    AND = 283,                     /* AND  */
+    JOIN = 284,                    /* JOIN  */
+    EXIT = 285,                    /* EXIT  */
+    HELP = 286,                    /* HELP  */
+    TXN_BEGIN = 287,               /* TXN_BEGIN  */
+    TXN_COMMIT = 288,              /* TXN_COMMIT  */
+    TXN_ABORT = 289,               /* TXN_ABORT  */
+    TXN_ROLLBACK = 290,            /* TXN_ROLLBACK  */
+    ORDER_BY = 291,                /* ORDER_BY  */
+    SUM = 292,                     /* SUM  */
+    MAX = 293,                     /* MAX  */
+    MIN = 294,                     /* MIN  */
+    COUNT = 295,                   /* COUNT  */
+    AS = 296,                      /* AS  */
+    LEQ = 297,                     /* LEQ  */
+    NEQ = 298,                     /* NEQ  */
+    GEQ = 299,                     /* GEQ  */
+    T_EOF = 300,                   /* T_EOF  */
+    IDENTIFIER = 301,              /* IDENTIFIER  */
+    VALUE_STRING = 302,            /* VALUE_STRING  */
+    VALUE_INT = 303,               /* VALUE_INT  */
+    VALUE_BIGINT = 304,            /* VALUE_BIGINT  */
+    VALUE_FLOAT = 305              /* VALUE_FLOAT  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
@@ -127,4 +128,4 @@ struct YYLTYPE
 int yyparse (void);
 
 
-#endif /* !YY_YY_MNT_C_USERS_MYRT1E_DOCUMENTS_RMDB_HEZUO_SRC_PARSER_YACC_TAB_H_INCLUDED  */
+#endif /* !YY_YY_HOME_WHU_ZSZ_RMDB_RMDB_SRC_PARSER_YACC_TAB_H_INCLUDED  */

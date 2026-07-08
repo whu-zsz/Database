@@ -38,36 +38,39 @@
 | [src/execution/executor_update.h](src/execution/executor_update.h) | 更新记录 + 索引同步（先删后插） |
 | [src/execution/executor_projection.h](src/execution/executor_projection.h) | 列投影 |
 | [src/execution/executor_nestedloop_join.h](src/execution/executor_nestedloop_join.h) | 嵌套循环连接（支持等值/非等值/笛卡尔积） |
+| [src/execution/execution_sort.h](src/execution/execution_sort.h) | 多列 ORDER BY + LIMIT（INT/BIGINT/FLOAT/DATETIME/STRING, ASC/DESC） |
 
-#### 5. 事务管理 (Transaction)
-
-| 文件 | 说明 |
-|---|---|
-| [src/transaction/transaction_manager.cpp](src/transaction/transaction_manager.cpp) | `begin`、`commit`、`abort`（事务基本生命周期） |
-
-#### 6. 语义分析修复
+#### 8. 语法扩展 (题目七 ORDER BY + LIMIT)
 
 | 文件 | 说明 |
 |---|---|
-| [src/analyze/analyze.cpp](src/analyze/analyze.cpp) | 补全 `UpdateStmt` 的 WHERE + SET 子句处理 |
-| [src/portal.h](src/portal.h) | UPDATE 0 行匹配时返回 `failure` |
+| [src/parser/ast.h](src/parser/ast.h) | `OrderBy` 支持多列排序键 |
+| [src/parser/yacc.y](src/parser/yacc.y) | `order_clause` 递归解析多列, `opt_limit_clause` 规则 |
+| [src/optimizer/plan.h](src/optimizer/plan.h) | `SortPlan` 支持多排序键 |
+| [src/optimizer/planner.cpp](src/optimizer/planner.cpp) | `generate_sort_plan` 遍历所有排序键 |
+| [src/execution/execution_sort.h](src/execution/execution_sort.h) | `SortExecutor` 多列排序实现 |
+| [src/portal.h](src/portal.h) | 多列排序 wired |
 
-#### 7. 测试基础设施
+#### 5. 数据类型扩展 (已完成 题目三/四)
 
 | 文件 | 说明 |
 |---|---|
-| [src/test/CMakeLists.txt](src/test/CMakeLists.txt) | 添加 `query_test` 构建目标 |
-| [src/test/query/query_test_basic.py](src/test/query/query_test_basic.py) | 修复路径、自动定位项目根、端口清理 |
+| [src/common/common.h](src/common/common.h) | `is_valid_datetime()` 严格校验 + `datetime_to_str()` 输出, BIGINT range check |
+| [src/execution/execution_manager.cpp](src/execution/execution_manager.cpp) | BIGINT/DATETIME 输出格式化 |
+| [src/execution/executor_insert.h](src/execution/executor_insert.h) | INT→BIGINT 提升, STRING→DATETIME 转换校验 |
+| [src/execution/executor_update.h](src/execution/executor_update.h) | UPDATE 中的类型转换 |
+| [src/execution/executor_seq_scan.h](src/execution/executor_seq_scan.h) | BIGINT/DATETIME 条件比较 (`cmp_bigint`) |
+| [src/parser/lex.l](src/parser/lex.l) | BIGINT 溢出检测 (`g_bigint_overflow`) |
+| [src/rmdb.cpp](src/rmdb.cpp) | BIGINT overflow → `failure` 输出 |
 
 ### ❌ 待实现
 
 | 优先级 | 模块 | 涉及文件 |
 |---|---|---|
 | 1 | B+ 树索引核心算法 | [src/index/ix_index_handle.cpp](src/index/ix_index_handle.cpp)（`lower_bound`、`insert_entry`、`delete_entry`、`split`、`coalesce` 等 15+ 函数） |
-| 2 | BIGINT / DATETIME 类型 | 类型校验与范围检查 |
-| 3 | 聚合函数 + 排序 | AggregateExecutor、OrderByExecutor |
-| 4 | 块嵌套循环连接 | BlockNestedLoopJoinExecutor |
-| 5 | 完整事务与锁 | LockManager（2PL + No-Wait）、LogManager（WAL）、RecoveryManager |
+| 2 | 聚合函数 | AggregateExecutor（SUM/MAX/MIN/COUNT） |
+| 3 | 块嵌套循环连接 | BlockNestedLoopJoinExecutor |
+| 4 | 完整事务与锁 | LockManager（2PL + No-Wait）、LogManager（WAL）、RecoveryManager |
 
 ## 项目结构
 

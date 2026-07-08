@@ -29,7 +29,7 @@ See the Mulan PSL v2 for more details. */
 
 static bool should_exit = false;
 static std::string g_db_name;
-bool g_bigint_overflow = false;
+extern bool g_bigint_overflow;
 
 // 构建全局所需的管理器对象
 auto disk_manager = std::make_unique<DiskManager>();

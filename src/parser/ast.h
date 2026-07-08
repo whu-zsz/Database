@@ -9,6 +9,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 #pragma once
 
+#include <cstdint>
 #include <vector>
 #include <string>
 #include <memory>
@@ -176,10 +177,13 @@ struct BinaryExpr : public TreeNode {
 
 struct OrderBy : public TreeNode
 {
-    std::shared_ptr<Col> cols;
-    OrderByDir orderby_dir;
-    OrderBy( std::shared_ptr<Col> cols_, OrderByDir orderby_dir_) :
-       cols(std::move(cols_)), orderby_dir(std::move(orderby_dir_)) {}
+    std::vector<std::shared_ptr<Col>> cols;
+    std::vector<OrderByDir> dirs;
+
+    void add_key(std::shared_ptr<Col> col, OrderByDir dir) {
+        cols.push_back(std::move(col));
+        dirs.push_back(dir);
+    }
 };
 
 struct AggExpr : public TreeNode {
@@ -239,15 +243,19 @@ struct SelectStmt : public TreeNode {
     
     bool has_sort;
     std::shared_ptr<OrderBy> order;
+    bool has_limit;
+    int limit_count;
 
 
     SelectStmt(std::vector<std::shared_ptr<Col>> cols_,
                std::vector<std::string> tabs_,
                std::vector<std::shared_ptr<BinaryExpr>> conds_,
                std::shared_ptr<OrderBy> order_) :
-            cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)), 
+            cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)),
             order(std::move(order_)) {
                 has_sort = (bool)order;
+                has_limit = false;
+                limit_count = -1;
             }
 };
 

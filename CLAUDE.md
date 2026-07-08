@@ -6,7 +6,7 @@
 
 ## 0. 当前实现进度
 
-### 已完成模块（题目一～四基础查询全部通过）
+### 已完成模块（题目一～四 + 题目七全部通过）
 
 | 模块 | 已完成内容 |
 |:---|:---|
@@ -15,29 +15,31 @@
 | | `LRUReplacer`: victim (尾部淘汰), pin (移除), unpin (首部插入, 重复 unpin 为 no-op) |
 | **Record** | `RmFileHandle`: get/insert/delete/update record + fetch/create/release page handle |
 | | `RmScan`: next/is_end/rid, bitmap 驱动的顺序扫描 |
-| **System** | `SmManager`: open_db (加载 meta + 打开文件句柄), close_db (刷盘 + 清理), drop_table (删索引 + 删数据文件), create_index, drop_index |
-| **Execution** | `SeqScanExecutor`: RmScan + check_conds (INT/FLOAT/STRING 6 种比较符), `rid_` 在 beginTuple/nextTuple 中设置 |
-| | `InsertExecutor`: 框架已实现 (写记录 + 同步索引) |
+| **System** | `SmManager`: open_db (加载 meta + 打开文件句柄 + 记录原始路径), close_db (刷盘 + 清理), drop_table (删索引 + 删数据文件), create_index, drop_index |
+| **Execution** | `SeqScanExecutor`: RmScan + check_conds (INT/BIGINT/FLOAT/DATETIME/STRING 6 种比较符), `rid_` 在 beginTuple/nextTuple 中设置 |
+| | `InsertExecutor`: 写记录 + 同步索引 + INT→BIGINT 提升 + STRING→DATETIME 转换校验 |
 | | `DeleteExecutor`: 遍历 rids_ → 删除索引条目 → delete_record |
-| | `UpdateExecutor`: 遍历 rids_ → 旧索引删 → 构造新记录 → update_record → 新索引插 (init_raw 只调用一次, 不在行循环内) |
+| | `UpdateExecutor`: 遍历 rids_ → 旧索引删 → 构造新记录 → update_record → 新索引插 (init_raw 只调用一次, 类型转换在行循环外) |
 | | `ProjectionExecutor`: 委托子节点, Next() 中按 sel_idxs_ 投影裁剪 |
 | | `NestedLoopJoinExecutor`: 双循环 + check_current_match (跨表字段查找 + 条件判断), 支持笛卡尔积/等值/非等值连接 |
+| | `SortExecutor`: 多列排序 (`std::sort` + compare 逐键比较), 支持 INT/BIGINT/FLOAT/DATETIME/STRING, ASC/DESC, LIMIT |
 | **Transaction** | `begin`: 新建 Transaction, 分配 txn_id/start_ts, 状态 GROWING, 加入 txn_map |
 | | `commit`/`abort`: 设置 COMMITTED/ABORTED 状态 (保留在 txn_map 以便 SetTransaction 检测并建新事务) |
 | **Analyze** | 补全 `UpdateStmt` 的 WHERE 条件提取 + SET 子句转换 |
 | **Portal** | UPDATE 匹配 0 行时 throw InternalError 输出 `failure` |
-| **Test** | `src/test/CMakeLists.txt` 添加 query_test 目标, `query_test_basic.py` 路径修复 |
+| **BIGINT** | 8 字节有符号整数类型, 范围 [-9223372036854775808, 9223372036854775807], INT→BIGINT 自动提升, 超限返回 `failure` |
+| **DATETIME** | 格式 `YYYY-MM-DD HH:MM:SS`, 严格校验闰年+大小月+时分秒范围, 内部存为 int64_t (YYYYMMDDHHMMSS), STRING→DATETIME 自动转换, 非法返回 `failure` |
+| **Test** | `src/test/CMakeLists.txt` 添加 query_test 目标, `query_test_basic.py` 路径修复, `storage_test1/2.sql` 测试用例, `test_bigint.sh` 脚本, `query_test_orderby.py` 测试脚本 |
 
 ### 待实现模块
 
 | 优先级 | 模块 | 涉及内容 |
 |:---|:---|:---|
 | 1 | B+ 树索引核心 | `IxIndexHandle`: lower_bound, insert_entry, delete_entry, split, coalesce, redistribute 等 |
-| 2 | BIGINT/DATETIME | 类型校验, 范围/格式检查 |
-| 3 | Aggregate + OrderBy | SUM/MAX/MIN/COUNT, 多字段排序, LIMIT |
-| 4 | BlockNLJ | 块嵌套循环连接 |
-| 5 | LockManager | 2PL + No-Wait 死锁预防, 表级/行级锁 |
-| 6 | Log + Recovery | WAL, Analyze/Redo/Undo |
+| 2 | Aggregate | SUM/MAX/MIN/COUNT |
+| 3 | BlockNLJ | 块嵌套循环连接 |
+| 4 | LockManager | 2PL + No-Wait 死锁预防, 表级/行级锁 |
+| 5 | Log + Recovery | WAL, Analyze/Redo/Undo |
 
 ### 关键踩坑记录
 
@@ -47,6 +49,9 @@
 - **UpdateExecutor::init_raw** — 必须在行循环外调用一次；循环内每行都调会导致第二行 assert raw==nullptr 崩溃
 - **SeqScanExecutor::rid_** — Portal 收 rids 时不调用 Next()，必须在 beginTuple/nextTuple 中设置 rid_
 - **TransactionManager** — commit/abort 不能从 txn_map 删除事务（下条 SQL 用旧 txn_id 查询会 assertion 失败），只改状态
+- **BIGINT 溢出检测** — 在 lexer 中检测超出 int64_t 范围的 BIGINT 字面量，通过全局标志 `g_bigint_overflow` 传递 → rmdb.cpp 捕获后输出 `failure`
+- **DATETIME 校验** — 不能只判断字符串长度，必须校验: 年 1000-9999, 月 1-12, 日按月份+闰年, 时 0-23, 分/秒 0-59
+- **g_bigint_overflow 定义位置** — 该变量在 lex.l 中用 `extern` 引用，定义必须放在 libparser.a 中的源文件（如 ast.cpp），不能放在 rmdb.cpp（否则 test_parser 链接 parser 库时找不到符号）
 
 ---
 

@@ -21,7 +21,7 @@ using namespace ast;
 %define parse.error verbose
 
 // keywords
-%token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY
+%token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY LIMIT
 WHERE UPDATE SET SELECT INT BIGINT DATETIME CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY
 %token SUM MAX MIN COUNT AS
 // non-keywords
@@ -53,6 +53,7 @@ WHERE UPDATE SET SELECT INT BIGINT DATETIME CHAR FLOAT INDEX AND JOIN EXIT HELP 
 %type <sv_orderby>  order_clause opt_order_clause
 %type <sv_orderby_dir> opt_asc_desc
 %type <sv_agg> aggregateSelector
+%type <sv_int> opt_limit_clause
 
 %%
 start:
@@ -151,9 +152,12 @@ dml:
     {
         $$ = std::make_shared<UpdateStmt>($2, $4, $5);
     }
-    |   SELECT selector FROM tableList optWhereClause opt_order_clause
+    |   SELECT selector FROM tableList optWhereClause opt_order_clause opt_limit_clause
     {
-        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6);
+        auto stmt = std::make_shared<SelectStmt>($2, $4, $5, $6);
+        stmt->has_limit = ($7 >= 0);
+        stmt->limit_count = $7;
+        $$ = stmt;
     }
     |   SELECT aggregateSelector FROM tableList optWhereClause
     {
@@ -402,17 +406,29 @@ opt_order_clause:
     ;
 
 order_clause:
-      col  opt_asc_desc 
-    { 
-        $$ = std::make_shared<OrderBy>($1, $2);
+      col  opt_asc_desc
+    {
+        auto ob = std::make_shared<OrderBy>();
+        ob->add_key($1, $2);
+        $$ = ob;
     }
-    ;   
+    |   order_clause ',' col opt_asc_desc
+    {
+        $1->add_key($3, $4);
+        $$ = $1;
+    }
+    ;
 
 opt_asc_desc:
     ASC          { $$ = OrderBy_ASC;     }
     |  DESC      { $$ = OrderBy_DESC;    }
     |       { $$ = OrderBy_DEFAULT; }
-    ;    
+    ;
+
+opt_limit_clause:
+    LIMIT VALUE_INT     { $$ = $2; }
+    |   /* epsilon */   { $$ = -1; }
+    ;
 
 tbName: IDENTIFIER;
 

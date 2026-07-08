@@ -14,3 +14,5 @@ namespace ast {
 std::shared_ptr<TreeNode> parse_tree;
 
 }
+
+bool g_bigint_overflow = false;
