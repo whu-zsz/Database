@@ -37,7 +37,13 @@ class DeleteExecutor : public AbstractExecutor {
     }
 
     std::unique_ptr<RmRecord> Next() override {
+        // 加表级 IX 锁
+        context_->lock_mgr_->lock_IX_on_table(context_->txn_, fh_->GetFd());
+
         for (auto &rid : rids_) {
+            // 加行级 X 锁
+            context_->lock_mgr_->lock_exclusive_on_record(context_->txn_, rid, fh_->GetFd());
+
             // 先从索引中删除
             auto rec = fh_->get_record(rid, context_);
             if (rec == nullptr) continue;

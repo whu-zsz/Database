@@ -31,22 +31,26 @@ static PlanTag choose_join_type(const std::vector<Condition> &conds) {
     return T_NestLoop;
 }
 
-// 目前的索引匹配规则为：完全匹配索引字段，且全部为单点查询，不会自动调整where条件的顺序
+// 索引匹配规则：完全匹配索引字段，支持等值查询和范围查询
 bool Planner::get_index_cols(std::string tab_name, std::vector<Condition> curr_conds, std::vector<std::string>& index_col_names) {
     index_col_names.clear();
     TabMeta& tab = sm_manager_->db_.get_table(tab_name);
     for (auto &index : tab.indexes) {
-        bool all_eq = true;
+        bool all_match = true;
         for (auto &idx_col : index.cols) {
-            bool has_eq = false;
+            bool has_match = false;
             for (auto &cond : curr_conds) {
                 if (cond.is_rhs_val && cond.lhs_col.tab_name == tab_name && cond.lhs_col.col_name == idx_col.name) {
-                    if (cond.op == OP_EQ) has_eq = true;
+                    // 支持等值查询和范围查询
+                    if (cond.op == OP_EQ || cond.op == OP_GT || cond.op == OP_GE ||
+                        cond.op == OP_LT || cond.op == OP_LE) {
+                        has_match = true;
+                    }
                 }
             }
-            if (!has_eq) all_eq = false;
+            if (!has_match) all_match = false;
         }
-        if (all_eq) {
+        if (all_match) {
             for (auto &idx_col : index.cols) index_col_names.push_back(idx_col.name);
             return true;
         }

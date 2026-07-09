@@ -75,19 +75,17 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
  * @param {LogManager*} log_manager 日志管理器指针
  */
 void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
-    // 1. 如果存在未提交的写操作，提交所有的写操作
-    // (写操作已通过RmFileHandle直接写入磁盘，无需额外处理)
-    // 2. 释放所有锁
-    // (基础查询测试不涉及锁)
-    // 3. 释放事务相关资源
-    // 4. 把事务日志刷入磁盘中
-    // (日志模块未完整实现，跳过)
-    // 5. 更新事务状态（保留在txn_map中，下次SetTransaction会检测COMMITTED并建新事务）
     std::unique_lock<std::mutex> lock(latch_);
+
+    // 释放所有锁
+    lock_manager_->unlock_all(txn);
+
+    // 清空写操作集
     for (auto *write_record : *txn->get_write_set()) {
         delete write_record;
     }
     txn->get_write_set()->clear();
+
     txn->set_state(TransactionState::COMMITTED);
 }
 
@@ -97,12 +95,9 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
  * @param {LogManager} *log_manager 日志管理器指针
  */
 void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
-    // 1. 回滚所有写操作
-    // 2. 释放所有锁
-    // 3. 清空事务相关资源
-    // 4. 把事务日志刷入磁盘中
-    // 5. 更新事务状态（保留在txn_map中）
     std::unique_lock<std::mutex> lock(latch_);
+
+    // 回滚写操作
     auto write_set = txn->get_write_set();
     while (!write_set->empty()) {
         WriteRecord *write_record = write_set->back();
@@ -134,5 +129,9 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
         }
         delete write_record;
     }
+
+    // 释放所有锁
+    lock_manager_->unlock_all(txn);
+
     txn->set_state(TransactionState::ABORTED);
 }

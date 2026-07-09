@@ -38,6 +38,9 @@ class UpdateExecutor : public AbstractExecutor {
         context_ = context;
     }
     std::unique_ptr<RmRecord> Next() override {
+        // 加表级 IX 锁
+        context_->lock_mgr_->lock_IX_on_table(context_->txn_, fh_->GetFd());
+
         // 预先初始化所有 SET 子句的值（只需初始化一次，后续行复用）
         std::vector<std::tuple<int, char*, int>> set_vals;  // (col_offset, raw_data, col_len)
         for (auto &set_clause : set_clauses_) {
@@ -82,6 +85,9 @@ class UpdateExecutor : public AbstractExecutor {
             delete[] new_buf;
         }
         for (auto &rid : rids_) {
+            // 加行级 X 锁
+            context_->lock_mgr_->lock_exclusive_on_record(context_->txn_, rid, fh_->GetFd());
+
             // 获取原记录
             auto old_rec = fh_->get_record(rid, context_);
             if (old_rec == nullptr) continue;

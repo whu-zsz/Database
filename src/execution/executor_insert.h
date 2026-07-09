@@ -38,6 +38,9 @@ class InsertExecutor : public AbstractExecutor {
     };
 
     std::unique_ptr<RmRecord> Next() override {
+        // 加表级 IX 锁
+        context_->lock_mgr_->lock_IX_on_table(context_->txn_, fh_->GetFd());
+
         // Make record buffer
         RmRecord rec(fh_->get_file_hdr().record_size);
         for (size_t i = 0; i < values_.size(); i++) {

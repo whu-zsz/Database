@@ -44,6 +44,9 @@ class SeqScanExecutor : public AbstractExecutor {
     }
 
     void beginTuple() override {
+        // 统一加表级 S 锁，防止幻读
+        context_->lock_mgr_->lock_shared_on_table(context_->txn_, fh_->GetFd());
+
         scan_ = std::make_unique<RmScan>(fh_);
         // 跳过不满足条件的记录
         while (!scan_->is_end() && !check_conds()) {
@@ -51,6 +54,8 @@ class SeqScanExecutor : public AbstractExecutor {
         }
         if (!scan_->is_end()) {
             rid_ = scan_->rid();
+            // 对满足条件的行加 S 锁
+            context_->lock_mgr_->lock_shared_on_record(context_->txn_, rid_, fh_->GetFd());
         }
     }
 
@@ -68,6 +73,8 @@ class SeqScanExecutor : public AbstractExecutor {
     }
 
     std::unique_ptr<RmRecord> Next() override {
+        // 读取前加 S 锁
+        context_->lock_mgr_->lock_shared_on_record(context_->txn_, rid_, fh_->GetFd());
         return fh_->get_record(rid_, context_);
     }
 

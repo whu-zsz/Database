@@ -67,6 +67,9 @@ class IndexScanExecutor : public AbstractExecutor {
     }
 
     void beginTuple() override {
+        // 加表级 S 锁，防止幻读
+        context_->lock_mgr_->lock_shared_on_table(context_->txn_, fh_->GetFd());
+
         rids_.clear();
         rid_pos_ = 0;
         auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_meta_.cols)).get();
@@ -83,6 +86,8 @@ class IndexScanExecutor : public AbstractExecutor {
         }
         if (rid_pos_ < rids_.size()) {
             rid_ = rids_[rid_pos_];
+            // 对满足条件的行加 S 锁
+            context_->lock_mgr_->lock_shared_on_record(context_->txn_, rid_, fh_->GetFd());
         }
     }
 
@@ -99,6 +104,8 @@ class IndexScanExecutor : public AbstractExecutor {
     bool is_end() const override { return rid_pos_ >= rids_.size(); }
 
     std::unique_ptr<RmRecord> Next() override {
+        // 读取前加 S 锁
+        context_->lock_mgr_->lock_shared_on_record(context_->txn_, rid_, fh_->GetFd());
         return fh_->get_record(rid_, context_);
     }
 

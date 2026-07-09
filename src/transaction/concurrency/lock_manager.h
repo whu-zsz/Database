@@ -38,8 +38,8 @@ class LockManager {
     class LockRequestQueue {
     public:
         std::list<LockRequest> request_queue_;  // 加锁队列
-        std::condition_variable cv_;            // 条件变量，用于唤醒正在等待加锁的申请，在no-wait策略下无需使用
         GroupLockMode group_lock_mode_ = GroupLockMode::NON_LOCK;   // 加锁队列的锁模式
+        bool upgrading_ = false;  // 是否正在升级锁
     };
 
 public:
@@ -60,6 +60,8 @@ public:
     bool lock_IX_on_table(Transaction* txn, int tab_fd);
 
     bool unlock(Transaction* txn, LockDataId lock_data_id);
+
+    void unlock_all(Transaction* txn);
 
 private:
     std::mutex latch_;      // 用于锁表的并发
