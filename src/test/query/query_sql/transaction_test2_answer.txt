@@ -1,0 +1,3 @@
+| id | name | score |
+| 1 | xiaohong | 100.000000 |
+| 2 | xiaoming | 99.000000 |

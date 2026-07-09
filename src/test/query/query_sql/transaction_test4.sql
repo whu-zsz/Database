@@ -1,0 +1,13 @@
+create table new_order (no_o_id int, no_d_id int, no_w_id int, no_entry_d datetime);
+create index new_order(no_w_id,no_d_id,no_o_id);
+begin;
+insert into new_order values (1, 2, 3, '2024-01-02 03:04:05');
+insert into new_order values (2, 2, 3, '2024-01-02 03:04:06');
+commit;
+select * from new_order where no_w_id = 3 and no_d_id = 2 and no_o_id = 2;
+begin;
+delete from new_order where no_o_id = 1;
+insert into new_order values (4, 2, 3, '2024-01-02 03:04:07');
+abort;
+select * from new_order where no_w_id = 3 and no_d_id = 2 and no_o_id = 1;
+select * from new_order where no_w_id = 3 and no_d_id = 2 and no_o_id = 4;

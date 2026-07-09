@@ -1,0 +1,10 @@
+create table student (id int, name char(8), score float);
+insert into student values (1, 'xiaohong', 90.0);
+insert into student values (2, 'xiaoming', 99.0);
+create index student(id);
+begin;
+update student set id = 3 where id = 2;
+delete from student where id = 1;
+abort;
+select * from student where id = 1;
+select * from student where id = 2;

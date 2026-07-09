@@ -9,10 +9,42 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include "transaction_manager.h"
+#include <cstring>
+#include <vector>
 #include "record/rm_file_handle.h"
 #include "system/sm_manager.h"
 
 std::unordered_map<txn_id_t, Transaction *> TransactionManager::txn_map = {};
+
+namespace {
+std::vector<char> make_index_key(const IndexMeta &index, const RmRecord &record) {
+    std::vector<char> key(index.col_tot_len);
+    int offset = 0;
+    for (size_t i = 0; i < index.cols.size(); ++i) {
+        memcpy(key.data() + offset, record.data + index.cols[i].offset, index.cols[i].len);
+        offset += index.cols[i].len;
+    }
+    return key;
+}
+
+void insert_indexes(SmManager *sm_manager, const std::string &tab_name, const TabMeta &tab,
+                    const RmRecord &record, const Rid &rid, Transaction *txn) {
+    for (const auto &index : tab.indexes) {
+        auto ih = sm_manager->ihs_.at(sm_manager->get_ix_manager()->get_index_name(tab_name, index.cols)).get();
+        auto key = make_index_key(index, record);
+        ih->insert_entry(key.data(), rid, txn);
+    }
+}
+
+void delete_indexes(SmManager *sm_manager, const std::string &tab_name, const TabMeta &tab,
+                    const RmRecord &record, Transaction *txn) {
+    for (const auto &index : tab.indexes) {
+        auto ih = sm_manager->ihs_.at(sm_manager->get_ix_manager()->get_index_name(tab_name, index.cols)).get();
+        auto key = make_index_key(index, record);
+        ih->delete_entry(key.data(), txn);
+    }
+}
+}
 
 /**
  * @description: 事务的开始方法
@@ -52,6 +84,10 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // (日志模块未完整实现，跳过)
     // 5. 更新事务状态（保留在txn_map中，下次SetTransaction会检测COMMITTED并建新事务）
     std::unique_lock<std::mutex> lock(latch_);
+    for (auto *write_record : *txn->get_write_set()) {
+        delete write_record;
+    }
+    txn->get_write_set()->clear();
     txn->set_state(TransactionState::COMMITTED);
 }
 
@@ -62,11 +98,41 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
  */
 void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     // 1. 回滚所有写操作
-    // (通过undo日志回滚，日志模块未完整实现)
     // 2. 释放所有锁
     // 3. 清空事务相关资源
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态（保留在txn_map中）
     std::unique_lock<std::mutex> lock(latch_);
+    auto write_set = txn->get_write_set();
+    while (!write_set->empty()) {
+        WriteRecord *write_record = write_set->back();
+        write_set->pop_back();
+
+        const std::string &tab_name = write_record->GetTableName();
+        TabMeta tab = sm_manager_->db_.get_table(tab_name);
+        RmFileHandle *fh = sm_manager_->fhs_.at(tab_name).get();
+        Rid rid = write_record->GetRid();
+
+        if (write_record->GetWriteType() == WType::INSERT_TUPLE) {
+            auto rec = fh->get_record(rid, nullptr);
+            if (rec != nullptr) {
+                delete_indexes(sm_manager_, tab_name, tab, *rec, txn);
+                fh->delete_record(rid, nullptr);
+            }
+        } else if (write_record->GetWriteType() == WType::DELETE_TUPLE) {
+            RmRecord &old_rec = write_record->GetRecord();
+            fh->insert_record(rid, old_rec.data);
+            insert_indexes(sm_manager_, tab_name, tab, old_rec, rid, txn);
+        } else if (write_record->GetWriteType() == WType::UPDATE_TUPLE) {
+            auto current_rec = fh->get_record(rid, nullptr);
+            if (current_rec != nullptr) {
+                delete_indexes(sm_manager_, tab_name, tab, *current_rec, txn);
+            }
+            RmRecord &old_rec = write_record->GetRecord();
+            fh->update_record(rid, old_rec.data, nullptr);
+            insert_indexes(sm_manager_, tab_name, tab, old_rec, rid, txn);
+        }
+        delete write_record;
+    }
     txn->set_state(TransactionState::ABORTED);
 }

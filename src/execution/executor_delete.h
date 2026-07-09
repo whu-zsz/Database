@@ -56,6 +56,7 @@ class DeleteExecutor : public AbstractExecutor {
             }
             // 删除记录
             fh_->delete_record(rid, context_);
+            context_->txn_->append_write_record(new WriteRecord(WType::DELETE_TUPLE, tab_name_, rid, *rec));
         }
         return nullptr;
     }

@@ -70,6 +70,26 @@ void RmFileHandle::insert_record(const Rid& rid, char* buf) {
     page_handle.page_hdr->num_records++;
     char *slot = page_handle.get_slot(rid.slot_no);
     memcpy(slot, buf, file_hdr_.record_size);
+
+    if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page) {
+        if (file_hdr_.first_free_page_no == rid.page_no) {
+            file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
+        } else {
+            int prev_page_no = file_hdr_.first_free_page_no;
+            while (prev_page_no != RM_NO_PAGE) {
+                RmPageHandle prev_page_handle = fetch_page_handle(prev_page_no);
+                if (prev_page_handle.page_hdr->next_free_page_no == rid.page_no) {
+                    prev_page_handle.page_hdr->next_free_page_no = page_handle.page_hdr->next_free_page_no;
+                    buffer_pool_manager_->unpin_page(prev_page_handle.page->get_page_id(), true);
+                    break;
+                }
+                int next_page_no = prev_page_handle.page_hdr->next_free_page_no;
+                buffer_pool_manager_->unpin_page(prev_page_handle.page->get_page_id(), false);
+                prev_page_no = next_page_no;
+            }
+        }
+        page_handle.page_hdr->next_free_page_no = RM_NO_PAGE;
+    }
     buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
 
