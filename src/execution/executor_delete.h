@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 #include "executor_abstract.h"
 #include "index/ix.h"
 #include "system/sm.h"
+#include "recovery/log_manager.h"
 
 class DeleteExecutor : public AbstractExecutor {
    private:
@@ -63,6 +64,12 @@ class DeleteExecutor : public AbstractExecutor {
             // 删除记录
             fh_->delete_record(rid, context_);
             context_->txn_->append_write_record(new WriteRecord(WType::DELETE_TUPLE, tab_name_, rid, *rec));
+
+            // 写 DELETE 日志（保存旧值用于 undo）
+            if (context_->log_mgr_ != nullptr) {
+                DeleteLogRecord delete_log(context_->txn_->get_transaction_id(), *rec, rid, tab_name_);
+                context_->txn_->set_prev_lsn(context_->log_mgr_->add_log_to_buffer(&delete_log));
+            }
         }
         return nullptr;
     }

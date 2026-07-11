@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 #include "executor_abstract.h"
 #include "index/ix.h"
 #include "system/sm.h"
+#include "recovery/log_manager.h"
 
 class UpdateExecutor : public AbstractExecutor {
    private:
@@ -114,6 +115,14 @@ class UpdateExecutor : public AbstractExecutor {
             // 更新记录
             fh_->update_record(rid, new_buf, context_);
             context_->txn_->append_write_record(new WriteRecord(WType::UPDATE_TUPLE, tab_name_, rid, *old_rec));
+
+            // 写 UPDATE 日志（保存新旧值）
+            if (context_->log_mgr_ != nullptr) {
+                RmRecord new_rec(fh_->get_file_hdr().record_size, new_buf);
+                UpdateLogRecord update_log(context_->txn_->get_transaction_id(), *old_rec, new_rec, rid, tab_name_);
+                context_->txn_->set_prev_lsn(context_->log_mgr_->add_log_to_buffer(&update_log));
+            }
+
             // 插入新记录到索引
             for (size_t i = 0; i < tab_.indexes.size(); ++i) {
                 auto &index = tab_.indexes[i];

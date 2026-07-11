@@ -109,7 +109,7 @@ void SmManager::open_db(const std::string& db_name) {
         auto &tab = entry.second;
         fhs_.emplace(tab.name, rm_manager_->open_file(tab.name));
     }
-    // 打开所有索引文件
+    // 打开所有索引文件（handle corrupt index files from crash）
     for (auto &entry : db_.tabs_) {
         auto &tab = entry.second;
         for (auto &index : tab.indexes) {
@@ -118,7 +118,17 @@ void SmManager::open_db(const std::string& db_name) {
                 col_names.push_back(col.name);
             }
             auto ix_name = ix_manager_->get_index_name(tab.name, col_names);
-            ihs_.emplace(ix_name, ix_manager_->open_index(tab.name, col_names));
+            try {
+                ihs_.emplace(ix_name, ix_manager_->open_index(tab.name, col_names));
+            } catch (std::exception &) {
+                // index file corrupted from crash, recreate it
+                if (disk_manager_->is_file(ix_name)) {
+                    disk_manager_->destroy_file(ix_name);
+                }
+                ix_manager_->create_index(tab.name, index.cols);
+                ihs_.emplace(ix_name, ix_manager_->open_index(tab.name, index.cols));
+                // mark this table for index rebuild
+            }
         }
     }
 }
@@ -220,6 +230,59 @@ void SmManager::desc_table(const std::string& tab_name, Context* context) {
     }
     // Print footer
     printer.print_separator(context);
+}
+
+void SmManager::rebuild_indexes() {
+    static Transaction dummy_txn(INVALID_TXN_ID);
+    for (auto &entry : db_.tabs_) {
+        auto &tab = entry.second;
+        if (tab.indexes.empty()) continue;
+
+        try {
+            // Step 1: recreate index files
+            for (auto &idx : tab.indexes) {
+                auto ix_name = ix_manager_->get_index_name(tab.name, idx.cols);
+                try {
+                    // close and remove old handle
+                    auto ih_it = ihs_.find(ix_name);
+                    if (ih_it != ihs_.end()) {
+                        ix_manager_->close_index(ih_it->second.get());
+                        ihs_.erase(ih_it);
+                    }
+                    // destroy and recreate file
+                    if (disk_manager_->is_file(ix_name))
+                        disk_manager_->destroy_file(ix_name);
+                    ix_manager_->create_index(tab.name, idx.cols);
+                    // open new handle
+                    ihs_.emplace(ix_name, ix_manager_->open_index(tab.name, idx.cols));
+                } catch (std::exception &) { continue; }
+            }
+
+            // Step 2: scan table and rebuild all indexes
+            auto fh_it = fhs_.find(tab.name);
+            if (fh_it == fhs_.end()) continue;
+            auto fh = fh_it->second.get();
+            for (RmScan scan(fh); !scan.is_end(); scan.next()) {
+                auto rec = fh->get_record(scan.rid(), nullptr);
+                if (rec == nullptr) continue;
+                for (auto &idx : tab.indexes) {
+                    try {
+                        std::vector<char> key(idx.col_tot_len);
+                        int off = 0;
+                        for (auto &col : idx.cols) {
+                            memcpy(key.data() + off, rec->data + col.offset, col.len);
+                            off += col.len;
+                        }
+                        auto ix_name = ix_manager_->get_index_name(tab.name, idx.cols);
+                        auto ih_it = ihs_.find(ix_name);
+                        if (ih_it != ihs_.end()) {
+                            ih_it->second->insert_entry(key.data(), scan.rid(), &dummy_txn);
+                        }
+                    } catch (std::exception &) {}
+                }
+            }
+        } catch (std::exception &) { continue; }
+    }
 }
 
 /**

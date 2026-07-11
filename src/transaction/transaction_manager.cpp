@@ -53,10 +53,6 @@ void delete_indexes(SmManager *sm_manager, const std::string &tab_name, const Ta
  * @param {LogManager*} log_manager 日志管理器指针
  */
 Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manager) {
-    // 1. 判断传入事务参数是否为空指针
-    // 2. 如果为空指针，创建新事务
-    // 3. 把开始事务加入到全局事务表中
-    // 4. 返回当前事务指针
     std::unique_lock<std::mutex> lock(latch_);
     if (txn == nullptr) {
         txn_id_t txn_id = next_txn_id_++;
@@ -65,6 +61,11 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
         txn->set_start_ts(start_ts);
         txn->set_state(TransactionState::GROWING);
         TransactionManager::txn_map[txn_id] = txn;
+        // 写 BEGIN 日志
+        if (log_manager != nullptr) {
+            BeginLogRecord begin_log(txn_id);
+            log_manager->add_log_to_buffer(&begin_log);
+        }
     }
     return txn;
 }
@@ -76,6 +77,13 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
  */
 void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     std::unique_lock<std::mutex> lock(latch_);
+
+    // 写 COMMIT 日志并刷盘（WAL: commit日志必须先于数据落盘）
+    if (log_manager != nullptr) {
+        CommitLogRecord commit_log(txn->get_transaction_id());
+        txn->set_prev_lsn(log_manager->add_log_to_buffer(&commit_log));
+        log_manager->flush_log_to_disk();
+    }
 
     // 释放所有锁
     lock_manager_->unlock_all(txn);
@@ -96,6 +104,13 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
  */
 void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     std::unique_lock<std::mutex> lock(latch_);
+
+    // 写 ABORT 日志并刷盘
+    if (log_manager != nullptr) {
+        AbortLogRecord abort_log(txn->get_transaction_id());
+        txn->set_prev_lsn(log_manager->add_log_to_buffer(&abort_log));
+        log_manager->flush_log_to_disk();
+    }
 
     // 回滚写操作
     auto write_set = txn->get_write_set();

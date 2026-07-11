@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 #include "executor_abstract.h"
 #include "index/ix.h"
 #include "system/sm.h"
+#include "recovery/log_manager.h"
 
 class InsertExecutor : public AbstractExecutor {
    private:
@@ -79,7 +80,13 @@ class InsertExecutor : public AbstractExecutor {
         // Insert into record file
         rid_ = fh_->insert_record(rec.data, context_);
         context_->txn_->append_write_record(new WriteRecord(WType::INSERT_TUPLE, tab_name_, rid_));
-        
+
+        // 写 INSERT 日志
+        if (context_->log_mgr_ != nullptr) {
+            InsertLogRecord insert_log(context_->txn_->get_transaction_id(), rec, rid_, tab_name_);
+            context_->txn_->set_prev_lsn(context_->log_mgr_->add_log_to_buffer(&insert_log));
+        }
+
         // Insert into index
         for(size_t i = 0; i < tab_.indexes.size(); ++i) {
             auto& index = tab_.indexes[i];
