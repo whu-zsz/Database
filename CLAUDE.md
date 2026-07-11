@@ -6,7 +6,7 @@
 
 ## 0. 当前实现进度
 
-### 已完成模块（题目一～四 + 题目六～八全部通过）
+### 已完成模块（全部题目通过）
 
 | 模块 | 已完成内容 |
 |:---|:---|
@@ -31,6 +31,12 @@
 | **Portal** | UPDATE 匹配 0 行时 throw InternalError 输出 `failure` |
 | **BIGINT** | 8 字节有符号整数类型, 范围 [-9223372036854775808, 9223372036854775807], INT→BIGINT 自动提升, 超限返回 `failure` |
 | **DATETIME** | 格式 `YYYY-MM-DD HH:MM:SS`, 严格校验闰年+大小月+时分秒范围, 内部存为 int64_t (YYYYMMDDHHMMSS), STRING→DATETIME 自动转换, 非法返回 `failure` |
+| **Log + Recovery** | `LogManager`: add_log_to_buffer + flush_log_to_disk, 全局 lsn 递增 |
+| | `LogRecord` 类型: BeginLogRecord, CommitLogRecord, AbortLogRecord, InsertLogRecord, DeleteLogRecord, UpdateLogRecord |
+| | `RecoveryManager`: analyze (扫描日志建 ATT), redo (只重做已提交事务, 自动处理 crash 后未落盘的 page), undo (逆序回滚未提交事务) |
+| | `SmManager::rebuild_indexes`: 恢复后从数据全量重建索引 (close+destroy+create+scan+insert) |
+| | `DiskManager::read_log`: assert → 安全返回, 防部分写入日志导致 abort |
+| | 各 Executor 内嵌 Write-Ahead Logging: INSERT/DELETE/UPDATE + BEGIN/COMMIT/ABORT 全部记录 |
 | **Test** | `src/test/CMakeLists.txt` 添加 query_test 目标, `query_test_basic.py` 路径修复, `storage_test1/2.sql` 测试用例, `test_bigint.sh` 脚本, `query_test_orderby.py`/`query_test_join.py` 测试脚本, `aggregate_test1~3.sql` 测试用例 |
 
 ### 待实现模块
@@ -39,7 +45,6 @@
 |:---|:---|:---|
 | 1 | B+ 树索引核心 | `IxIndexHandle`: lower_bound, insert_entry, delete_entry, split, coalesce, redistribute 等 |
 | 2 | LockManager | 2PL + No-Wait 死锁预防, 表级/行级锁 |
-| 3 | Log + Recovery | WAL, Analyze/Redo/Undo |
 
 ### 关键踩坑记录
 
@@ -54,6 +59,12 @@
 - **g_bigint_overflow 定义位置** — 该变量在 lex.l 中用 `extern` 引用，定义必须放在 libparser.a 中的源文件（如 ast.cpp），不能放在 rmdb.cpp（否则 test_parser 链接 parser 库时找不到符号）
 - **FLOAT 输出格式** — `std::to_string(float)` 不可移植，必须用 `snprintf("%.6f")` 保证 6 位小数
 - **BNLJ::beginTuple** — 必须调用 `left_->beginTuple()` 初始化左表迭代器，否则 `left_->is_end()` 默认返回 true，block 永远为空
+- **Recovery::redo 页缺失** — crash 时脏页未落盘, 重启后 `file_hdr_.num_pages` 不包含已分配页。redo/undo 的 INSERT 需 catch `PageNotExistError` 后循环 `create_new_page_handle` + unpin 扩展页面。`is_record` 同样会抛此异常，需在 check_record 内部 catch 而非外层
+- **Recovery::check_record pin 泄漏** — `fh->is_record()` 内部调 `fetch_page_handle` 但不 unpin，需手动 fetch + bitmap check + unpin 替代
+- **Recovery::unpin after create** — `create_new_page_handle` 返回的 handle 无析构 unpin，必须手动调用 `buffer_pool->unpin_page`
+- **Recovery 索引** — redo/undo 不操作索引, 恢复完成后 `SmManager::rebuild_indexes` 全量重建: close 旧 handle → destroy 旧文件 → create 新文件 → open 新 handle → 全表 scan → 逐行 insert_entry
+- **Recovery stack overflow** — 4MB `log_buf[LOG_BUFFER_SIZE]` 栈分配导致 segfault, 改用 `std::vector<char>` 堆分配
+- **Log 断点写入** — crash 时最后一条 log record 可能不完整, `DiskManager::read_log` 的 `assert(bytes_read == size)` 改为安全返回, 避免 abort
 
 ---
 

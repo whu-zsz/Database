@@ -305,11 +305,14 @@ int main(int argc, char **argv) {
         // Open database
         sm_manager->open_db(db_name);
 
-        // recovery database: 每个阶段单独 try，防止某一阶段抛异常中断恢复
-        try { recovery->analyze(); } catch (RMDBError &e) { std::cerr << "analyze: " << e.what() << std::endl; }
-        try { recovery->redo(); } catch (RMDBError &e) { std::cerr << "redo: " << e.what() << std::endl; }
-        try { recovery->undo(); } catch (RMDBError &e) { std::cerr << "undo: " << e.what() << std::endl; }
-        try { sm_manager->rebuild_indexes(); } catch (RMDBError &e) { std::cerr << "rebuild_indexes: " << e.what() << std::endl; }
+        // recovery database
+        try {
+            try { recovery->analyze(); } catch (RMDBError &e) { std::cerr << "analyze: " << e.what() << std::endl; }
+            try { recovery->redo(); } catch (RMDBError &e) { std::cerr << "redo: " << e.what() << std::endl; }
+            try { recovery->undo(); } catch (RMDBError &e) { std::cerr << "undo: " << e.what() << std::endl; }
+            try { sm_manager->rebuild_indexes(); } catch (RMDBError &e) { std::cerr << "rebuild_indexes: " << e.what() << std::endl; }
+        } catch (std::exception &e) { std::cerr << "recovery: " << e.what() << std::endl; }
+        catch (...) { std::cerr << "recovery: unknown error" << std::endl; }
 
         // 开启服务端，开始接受客户端连接
         start_server();

@@ -75,12 +75,27 @@
 | [src/parser/lex.l](src/parser/lex.l) | BIGINT 溢出检测 (`g_bigint_overflow`) |
 | [src/rmdb.cpp](src/rmdb.cpp) | BIGINT overflow → `failure` 输出 |
 
+#### 10. 日志与故障恢复 (题目十一)
+
+| 文件 | 说明 |
+|---|---|
+| [src/recovery/log_manager.h](src/recovery/log_manager.h) | 6 种 LogRecord 类型（Begin/Commit/Abort/Insert/Delete/Update） |
+| [src/recovery/log_manager.cpp](src/recovery/log_manager.cpp) | `add_log_to_buffer` + `flush_log_to_disk`, WAL 协议 |
+| [src/recovery/log_recovery.cpp](src/recovery/log_recovery.cpp) | `analyze` + `redo`(只重做已提交) + `undo`(逆序回滚) |
+| [src/transaction/transaction_manager.cpp](src/transaction/transaction_manager.cpp) | begin/commit/abort 写日志 |
+| [src/execution/executor_insert.h](src/execution/executor_insert.h) | INSERT 写 InsertLogRecord |
+| [src/execution/executor_delete.h](src/execution/executor_delete.h) | DELETE 写 DeleteLogRecord（保存旧值） |
+| [src/execution/executor_update.h](src/execution/executor_update.h) | UPDATE 写 UpdateLogRecord（保存新旧值） |
+| [src/system/sm_manager.cpp](src/system/sm_manager.cpp) | `rebuild_indexes` 恢复后全量重建索引 |
+| [src/storage/disk_manager.cpp](src/storage/disk_manager.cpp) | `read_log` assert→安全返回（防止不完整日志 abort） |
+| [src/rmdb.cpp](src/rmdb.cpp) | 恢复阶段多层 try-catch + catch-all 防护 |
+
 ### ❌ 待实现
 
 | 优先级 | 模块 | 涉及文件 |
 |---|---|---|
-| 1 | B+ 树索引核心算法 | [src/index/ix_index_handle.cpp](src/index/ix_index_handle.cpp)（`lower_bound`、`insert_entry`、`delete_entry`、`split`、`coalesce` 等 15+ 函数） |
-| 2 | 完整事务与锁 | LockManager（2PL + No-Wait）、LogManager（WAL）、RecoveryManager |
+| 1 | B+ 树索引核心算法 | [src/index/ix_index_handle.cpp](src/index/ix_index_handle.cpp) |
+| 2 | LockManager | 2PL + No-Wait 死锁预防 |
 
 ## 项目结构
 
@@ -94,7 +109,7 @@ rmdb/
 │   ├── optimizer/    # 查询优化器 (框架完成)
 │   ├── parser/       # 词法/语法分析 (flex/bison)
 │   ├── record/       # 记录管理 ✅
-│   ├── recovery/     # 日志与故障恢复 (待实现)
+│   ├── recovery/     # 日志与故障恢复 ✅
 │   ├── replacer/     # 缓存淘汰策略 ✅
 │   ├── storage/      # 磁盘与缓冲池管理 ✅
 │   ├── system/       # 元数据管理 ✅
