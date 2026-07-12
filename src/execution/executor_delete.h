@@ -61,15 +61,17 @@ class DeleteExecutor : public AbstractExecutor {
                 ih->delete_entry(key, context_->txn_);
                 delete[] key;
             }
-            // 删除记录
-            fh_->delete_record(rid, context_);
-            context_->txn_->append_write_record(new WriteRecord(WType::DELETE_TUPLE, tab_name_, rid, *rec));
-
-            // 写 DELETE 日志（保存旧值用于 undo）
+            // WAL: 先写 DELETE 日志（保存旧值用于 undo）
+            lsn_t page_lsn = INVALID_LSN;
             if (context_->log_mgr_ != nullptr) {
                 DeleteLogRecord delete_log(context_->txn_->get_transaction_id(), *rec, rid, tab_name_);
-                context_->txn_->set_prev_lsn(context_->log_mgr_->add_log_to_buffer(&delete_log));
+                page_lsn = context_->log_mgr_->add_log_to_buffer(&delete_log);
+                context_->txn_->set_prev_lsn(page_lsn);
             }
+
+            // 再删除记录
+            fh_->delete_record(rid, context_, page_lsn);
+            context_->txn_->append_write_record(new WriteRecord(WType::DELETE_TUPLE, tab_name_, rid, *rec));
         }
         return nullptr;
     }

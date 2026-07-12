@@ -64,6 +64,7 @@ class RmFileHandle {
 
     RmFileHdr get_file_hdr() { return file_hdr_; }
     int GetFd() { return fd_; }
+    BufferPoolManager* get_buffer_pool_manager() { return buffer_pool_manager_; }
 
     /* 判断指定位置上是否已经存在一条记录，通过Bitmap来判断 */
     bool is_record(const Rid &rid) const {
@@ -73,13 +74,13 @@ class RmFileHandle {
 
     std::unique_ptr<RmRecord> get_record(const Rid &rid, Context *context) const;
 
-    Rid insert_record(char *buf, Context *context);
+    Rid insert_record(char *buf, Context *context, lsn_t page_lsn = INVALID_LSN);
 
-    void insert_record(const Rid &rid, char *buf);
+    void insert_record(const Rid &rid, char *buf, lsn_t page_lsn = INVALID_LSN);
 
-    void delete_record(const Rid &rid, Context *context);
+    void delete_record(const Rid &rid, Context *context, lsn_t page_lsn = INVALID_LSN);
 
-    void update_record(const Rid &rid, char *buf, Context *context);
+    void update_record(const Rid &rid, char *buf, Context *context, lsn_t page_lsn = INVALID_LSN);
 
     RmPageHandle create_new_page_handle();
 

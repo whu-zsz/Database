@@ -244,7 +244,7 @@ int DiskManager::read_log(char *log_data, int size, int offset) {
     if(size == 0) return 0;
     lseek(log_fd_, offset, SEEK_SET);
     ssize_t bytes_read = read(log_fd_, log_data, size);
-    if (bytes_read < 0) bytes_read = 0;
+    assert(bytes_read == size);
     return bytes_read;
 }
 

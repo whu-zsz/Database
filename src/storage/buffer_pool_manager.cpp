@@ -9,6 +9,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include "buffer_pool_manager.h"
+#include "recovery/log_manager.h"
 
 /**
  * @description: 从free_list或replacer中得到可淘汰帧页的 *frame_id
@@ -36,6 +37,8 @@ bool BufferPoolManager::find_victim_page(frame_id_t* frame_id) {
 void BufferPoolManager::update_page(Page *page, PageId new_page_id, frame_id_t new_frame_id) {
     // 1 如果是脏页，写回磁盘，并且把dirty置为false
     if (page->is_dirty_) {
+        // WAL: 刷页前先刷日志
+        if (log_manager_) log_manager_->flush_log_to_disk();
         disk_manager_->write_page(page->id_.fd, page->id_.page_no, page->data_, PAGE_SIZE);
         page->is_dirty_ = false;
     }
@@ -74,6 +77,8 @@ Page* BufferPoolManager::fetch_page(PageId page_id) {
     // 2.     若获得的可用frame存储的为dirty page，则须调用updata_page将page写回到磁盘
     Page* page = &pages_[frame_id];
     if (page->is_dirty_) {
+        // WAL: 刷页前先刷日志
+        if (log_manager_) log_manager_->flush_log_to_disk();
         disk_manager_->write_page(page->id_.fd, page->id_.page_no, page->data_, PAGE_SIZE);
     }
     // 移除旧页面的页表映射
@@ -141,6 +146,8 @@ bool BufferPoolManager::flush_page(PageId page_id) {
     // 2. 无论P是否为脏都将其写回磁盘。
     frame_id_t frame_id = it->second;
     Page* page = &pages_[frame_id];
+    // WAL: 刷页前先刷日志
+    if (log_manager_) log_manager_->flush_log_to_disk();
     disk_manager_->write_page(page->id_.fd, page->id_.page_no, page->data_, PAGE_SIZE);
     // 3. 更新P的is_dirty_
     page->is_dirty_ = false;
@@ -162,6 +169,8 @@ Page* BufferPoolManager::new_page(PageId* page_id) {
     Page* page = &pages_[frame_id];
     // 如果旧页面是脏页，先写回磁盘
     if (page->is_dirty_) {
+        // WAL: 刷页前先刷日志
+        if (log_manager_) log_manager_->flush_log_to_disk();
         disk_manager_->write_page(page->id_.fd, page->id_.page_no, page->data_, PAGE_SIZE);
     }
     // 移除旧页面的页表映射
@@ -198,6 +207,8 @@ bool BufferPoolManager::delete_page(PageId page_id) {
     }
     // 3.   将目标页数据写回磁盘，从页表中删除目标页，重置其元数据，将其加入free_list_，返回true
     if (page->is_dirty_) {
+        // WAL: 刷页前先刷日志
+        if (log_manager_) log_manager_->flush_log_to_disk();
         disk_manager_->write_page(page->id_.fd, page->id_.page_no, page->data_, PAGE_SIZE);
     }
     page_table_.erase(it);
@@ -214,6 +225,8 @@ bool BufferPoolManager::delete_page(PageId page_id) {
  */
 void BufferPoolManager::flush_all_pages(int fd) {
     std::scoped_lock lock{latch_};
+    // WAL: 批量刷页前先刷日志
+    if (log_manager_) log_manager_->flush_log_to_disk();
     for (auto &entry : page_table_) {
         const PageId &page_id = entry.first;
         if (page_id.fd == fd) {
@@ -221,6 +234,27 @@ void BufferPoolManager::flush_all_pages(int fd) {
             Page *page = &pages_[frame_id];
             disk_manager_->write_page(fd, page_id.page_no, page->data_, PAGE_SIZE);
             page->is_dirty_ = false;
+        }
+    }
+}
+
+/**
+ * @description: 移除缓冲池中指定fd的所有页面（不写回磁盘，用于文件销毁前清理）
+ * @param {int} fd 文件句柄
+ */
+void BufferPoolManager::remove_pages(int fd) {
+    std::scoped_lock lock{latch_};
+    for (auto it = page_table_.begin(); it != page_table_.end(); ) {
+        if (it->first.fd == fd) {
+            frame_id_t frame_id = it->second;
+            Page *page = &pages_[frame_id];
+            page->reset_memory();
+            page->is_dirty_ = false;
+            page->id_ = PageId{INVALID_PAGE_ID, INVALID_PAGE_ID};
+            free_list_.push_back(frame_id);
+            it = page_table_.erase(it);
+        } else {
+            ++it;
         }
     }
 }

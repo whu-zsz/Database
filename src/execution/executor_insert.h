@@ -82,9 +82,17 @@ class InsertExecutor : public AbstractExecutor {
         context_->txn_->append_write_record(new WriteRecord(WType::INSERT_TUPLE, tab_name_, rid_));
 
         // 写 INSERT 日志
+        lsn_t page_lsn = INVALID_LSN;
         if (context_->log_mgr_ != nullptr) {
             InsertLogRecord insert_log(context_->txn_->get_transaction_id(), rec, rid_, tab_name_);
-            context_->txn_->set_prev_lsn(context_->log_mgr_->add_log_to_buffer(&insert_log));
+            page_lsn = context_->log_mgr_->add_log_to_buffer(&insert_log);
+            context_->txn_->set_prev_lsn(page_lsn);
+        }
+        // WAL: 设置页面LSN（需要重新fetch页面来设置）
+        if (page_lsn != INVALID_LSN) {
+            auto ph = fh_->fetch_page_handle(rid_.page_no);
+            ph.page->set_page_lsn(page_lsn);
+            fh_->get_buffer_pool_manager()->unpin_page(ph.page->get_page_id(), true);
         }
 
         // Insert into index

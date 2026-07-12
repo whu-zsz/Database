@@ -36,7 +36,7 @@ std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid& rid, Context* cont
  * @param {Context*} context
  * @return {Rid} 插入的记录的记录号（位置）
  */
-Rid RmFileHandle::insert_record(char* buf, Context* context) {
+Rid RmFileHandle::insert_record(char* buf, Context* context, lsn_t page_lsn) {
     // 1. 获取当前未满的page handle
     RmPageHandle page_handle = create_page_handle();
     // 2. 在page handle中找到空闲slot位置
@@ -55,6 +55,8 @@ Rid RmFileHandle::insert_record(char* buf, Context* context) {
             file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
         }
     }
+    // WAL: 设置页面LSN
+    if (page_lsn != INVALID_LSN) page_handle.page->set_page_lsn(page_lsn);
     buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
     return Rid{page_no, slot_no};
 }
@@ -64,7 +66,7 @@ Rid RmFileHandle::insert_record(char* buf, Context* context) {
  * @param {Rid&} rid 要插入记录的位置
  * @param {char*} buf 要插入记录的数据
  */
-void RmFileHandle::insert_record(const Rid& rid, char* buf) {
+void RmFileHandle::insert_record(const Rid& rid, char* buf, lsn_t page_lsn) {
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
     Bitmap::set(page_handle.bitmap, rid.slot_no);
     page_handle.page_hdr->num_records++;
@@ -90,6 +92,8 @@ void RmFileHandle::insert_record(const Rid& rid, char* buf) {
         }
         page_handle.page_hdr->next_free_page_no = RM_NO_PAGE;
     }
+    // WAL: 设置页面LSN
+    if (page_lsn != INVALID_LSN) page_handle.page->set_page_lsn(page_lsn);
     buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
 
@@ -98,7 +102,7 @@ void RmFileHandle::insert_record(const Rid& rid, char* buf) {
  * @param {Rid&} rid 要删除的记录的记录号（位置）
  * @param {Context*} context
  */
-void RmFileHandle::delete_record(const Rid& rid, Context* context) {
+void RmFileHandle::delete_record(const Rid& rid, Context* context, lsn_t page_lsn) {
     // 1. 获取指定记录所在的page handle
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
     // 2. 更新page_handle.page_hdr中的数据结构
@@ -109,6 +113,8 @@ void RmFileHandle::delete_record(const Rid& rid, Context* context) {
     if (was_full) {
         release_page_handle(page_handle);
     }
+    // WAL: 设置页面LSN
+    if (page_lsn != INVALID_LSN) page_handle.page->set_page_lsn(page_lsn);
     buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
 
@@ -119,12 +125,14 @@ void RmFileHandle::delete_record(const Rid& rid, Context* context) {
  * @param {char*} buf 新记录的数据
  * @param {Context*} context
  */
-void RmFileHandle::update_record(const Rid& rid, char* buf, Context* context) {
+void RmFileHandle::update_record(const Rid& rid, char* buf, Context* context, lsn_t page_lsn) {
     // 1. 获取指定记录所在的page handle
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
     // 2. 更新记录
     char *slot = page_handle.get_slot(rid.slot_no);
     memcpy(slot, buf, file_hdr_.record_size);
+    // WAL: 设置页面LSN
+    if (page_lsn != INVALID_LSN) page_handle.page->set_page_lsn(page_lsn);
     buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
 
